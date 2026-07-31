@@ -18,8 +18,11 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
-      - name: Extract source
-        run: mkdir chengdu-2026 && tar -xzf chengdu-2026-source.tgz -C chengdu-2026
+      - name: Restore source archive
+        run: |
+          cat chengdu-chunks/part-* | base64 --decode > /tmp/chengdu-2026-source.tgz
+          mkdir chengdu-2026
+          tar -xzf /tmp/chengdu-2026-source.tgz -C chengdu-2026
       - name: Build debug APK
         run: gradle -p chengdu-2026 :app:assembleDebug --stacktrace
       - name: Upload APK
