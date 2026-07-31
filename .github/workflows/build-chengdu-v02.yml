@@ -19,7 +19,10 @@ jobs:
           gradle-version: '8.7'
       - name: Restore source
         run: |
+          sha256sum chengdu-v02-chunks/part-*
+          wc -c chengdu-v02-chunks/part-*
           cat chengdu-v02-chunks/part-* | base64 --decode > /tmp/chengdu-v02-source.tgz
+          sha256sum /tmp/chengdu-v02-source.tgz
           echo "176e2c936a8c77dcc4810b53ce9dda90de85174c2e8ffff748b4a3aca8badb88  /tmp/chengdu-v02-source.tgz" | sha256sum -c -
           mkdir chengdu-v02
           tar -xzf /tmp/chengdu-v02-source.tgz -C chengdu-v02
