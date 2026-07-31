@@ -23,6 +23,7 @@ jobs:
           cat chengdu-chunks/part-* | base64 --decode > /tmp/chengdu-2026-source.tgz
           mkdir chengdu-2026
           tar -xzf /tmp/chengdu-2026-source.tgz -C chengdu-2026
+          sed -i 's#@drawable/ic_launcher_foreground_round#@drawable/ic_launcher_foreground#g' chengdu-2026/app/src/main/AndroidManifest.xml
       - name: Build debug APK
         run: gradle -p chengdu-2026 :app:assembleDebug --stacktrace
       - name: Upload APK
