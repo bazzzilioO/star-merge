@@ -39,8 +39,8 @@ jobs:
           "$BT/apksigner" sign \
             --ks /tmp/chengdu-release.jks \
             --ks-key-alias chengdu \
-            --ks-pass pass:Chengdu2026! \
-            --key-pass pass:Chengdu2026! \
+            --ks-pass pass:C26-UgmRwJsMDaDdKLBAcbis7E5k \
+            --key-pass pass:C26-UgmRwJsMDaDdKLBAcbis7E5k \
             --v1-signing-enabled true \
             --v2-signing-enabled true \
             --v3-signing-enabled true \
