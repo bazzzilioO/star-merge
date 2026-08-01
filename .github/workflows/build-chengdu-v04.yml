@@ -58,8 +58,27 @@ jobs:
       - name: Build unsigned release APK
         run: gradle -p chengdu-v04 :app:assembleRelease --stacktrace
 
+      - name: Collect Android signing tools
+        run: |
+          BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n1)"
+          mkdir -p /tmp/android-signing-tools/lib
+          cp "$BT/zipalign" /tmp/android-signing-tools/
+          cp "$BT/apksigner" /tmp/android-signing-tools/
+          cp "$BT/lib/apksigner.jar" /tmp/android-signing-tools/lib/
+          LIBCPP="$(find "$ANDROID_HOME" -name 'libc++.so' -type f | head -n1)"
+          test -n "$LIBCPP"
+          cp "$LIBCPP" /tmp/android-signing-tools/
+          echo "Build tools: $BT"
+          echo "libc++: $LIBCPP"
+
       - name: Upload unsigned APK
         uses: actions/upload-artifact@v4
         with:
           name: chengdu-v04-unsigned
           path: chengdu-v04/app/build/outputs/apk/release/app-release-unsigned.apk
+
+      - name: Upload Android signing tools
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-signing-tools-v04
+          path: /tmp/android-signing-tools
