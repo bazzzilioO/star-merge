@@ -22,17 +22,35 @@ jobs:
 
       - name: Restore source
         run: |
-          wc -c chengdu-v04-chunks/part-* || true
-          find chengdu-v04-chunks -type f -name 'part-*' -print0 | sort -zV | xargs -0 cat | tr -d '\n\r\t ' > /tmp/chengdu-v04-source.b64
-          wc -c /tmp/chengdu-v04-source.b64
-          sha256sum /tmp/chengdu-v04-source.b64
           python3 - <<'PY'
           from pathlib import Path
-          b=Path('/tmp/chengdu-v04-source.b64').read_bytes()
-          allowed=set(b'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=')
-          bad=[(i,x) for i,x in enumerate(b) if x not in allowed]
-          print('length_mod_4',len(b)%4,'bad_chars',bad[:20])
+          import hashlib
+
+          p = Path('chengdu-v04-chunks/part-10-00')
+          data = p.read_bytes()
+          target = '44bf0e90663a19f2c6a3d5f39adeab545d3cae86aeedf59cb3a0d8b6f58cb442'
+          if hashlib.sha256(data).hexdigest() != target:
+              alphabet = b'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/='
+              found = None
+              for pos in range(len(data) + 1):
+                  prefix, suffix = data[:pos], data[pos:]
+                  for ch in alphabet:
+                      candidate = prefix + bytes([ch]) + suffix
+                      if hashlib.sha256(candidate).hexdigest() == target:
+                          found = candidate
+                          print('Recovered missing base64 byte at', pos, chr(ch))
+                          break
+                  if found is not None:
+                      break
+              if found is None:
+                  raise SystemExit('Could not recover truncated archive chunk')
+              p.write_bytes(found)
+          print('part-10-00', len(p.read_bytes()), hashlib.sha256(p.read_bytes()).hexdigest())
           PY
+          wc -c chengdu-v04-chunks/part-* || true
+          find chengdu-v04-chunks -type f -name 'part-*' -print0 | sort -zV | xargs -0 cat | tr -d '\n\r\t ' > /tmp/chengdu-v04-source.b64
+          test "$(wc -c < /tmp/chengdu-v04-source.b64)" = "128544"
+          echo "d0cddc4994fbef7867432d10e53ed6dd8cd2ab736625f3a22f2d35b3808a753e  /tmp/chengdu-v04-source.b64" | sha256sum -c -
           base64 --decode /tmp/chengdu-v04-source.b64 > /tmp/chengdu-v04-source.tgz
           mkdir chengdu-v04
           tar -xzf /tmp/chengdu-v04-source.tgz -C chengdu-v04
