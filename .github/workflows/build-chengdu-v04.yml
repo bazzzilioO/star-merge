@@ -22,7 +22,18 @@ jobs:
 
       - name: Restore source
         run: |
-          find chengdu-v04-chunks -type f -name 'part-*' -print0 | sort -zV | xargs -0 cat | base64 --decode > /tmp/chengdu-v04-source.tgz
+          wc -c chengdu-v04-chunks/part-* || true
+          find chengdu-v04-chunks -type f -name 'part-*' -print0 | sort -zV | xargs -0 cat | tr -d '\n\r\t ' > /tmp/chengdu-v04-source.b64
+          wc -c /tmp/chengdu-v04-source.b64
+          sha256sum /tmp/chengdu-v04-source.b64
+          python3 - <<'PY'
+          from pathlib import Path
+          b=Path('/tmp/chengdu-v04-source.b64').read_bytes()
+          allowed=set(b'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=')
+          bad=[(i,x) for i,x in enumerate(b) if x not in allowed]
+          print('length_mod_4',len(b)%4,'bad_chars',bad[:20])
+          PY
+          base64 --decode /tmp/chengdu-v04-source.b64 > /tmp/chengdu-v04-source.tgz
           mkdir chengdu-v04
           tar -xzf /tmp/chengdu-v04-source.tgz -C chengdu-v04
 
