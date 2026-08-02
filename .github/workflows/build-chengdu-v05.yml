@@ -1,0 +1,40 @@
+name: Build Chengdu v0.5 APK
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    if: github.head_ref == 'chengdu-2026-v05-build'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Restore source
+        run: |
+          find chengdu-v05-chunks -type f -name 'part-*' -print0 | sort -z | xargs -0 cat > /tmp/chengdu-v05-project.b64
+          test "$(wc -c < /tmp/chengdu-v05-project.b64)" = "178392"
+          echo "fb36e358dc04c0285f6b8979f1d04f78b714bb99523fc64039a8ddec44e31199  /tmp/chengdu-v05-project.b64" | sha256sum -c -
+          base64 --decode /tmp/chengdu-v05-project.b64 > /tmp/chengdu-v05-project.tgz
+          echo "d76e63e9081f70d5e55676fa5744f2f2d2afacdda3f40b88226a8786adb18fdd  /tmp/chengdu-v05-project.tgz" | sha256sum -c -
+          mkdir chengdu-v05
+          tar -xzf /tmp/chengdu-v05-project.tgz -C chengdu-v05
+
+      - name: Build unsigned release APK
+        run: gradle -p chengdu-v05 :app:assembleRelease --stacktrace
+
+      - name: Upload unsigned APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: chengdu-v05-unsigned
+          path: chengdu-v05/app/build/outputs/apk/release/app-release-unsigned.apk
