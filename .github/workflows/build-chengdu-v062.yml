@@ -35,7 +35,12 @@ jobs:
           new += "          echo \"535e1bc5944379acb1659b5f3246dc9a617358ff5abc9a07a69830c2524cdcab  /tmp/v062-overlay.tar.xz.b64\" | sha256sum -c -\n"
           if old not in text:
               raise SystemExit('v0.6.2 reconstruction block not found')
-          p.write_text(text.replace(old, new, 1))
+          text = text.replace(old, new, 1)
+          old_find = "LIBCPP=\"$(find \"$ANDROID_HOME\" -name 'libc++.so' -type f | head -n1)\""
+          new_find = "LIBCPP=\"$(find \"$ANDROID_HOME\" -name 'libc++.so' -type f -print -quit)\""
+          if old_find not in text:
+              raise SystemExit('libc++ lookup block not found')
+          p.write_text(text.replace(old_find, new_find, 1))
           PY
           ruby -ryaml -e '
             doc = YAML.load_file("/tmp/original-v062.yml")
