@@ -119,10 +119,10 @@ jobs:
           marker = '\nrender();\n'
           assert text.endswith(marker)
           runtime = Path('/tmp/v061-overlay/v061-runtime.js').read_text()
-          v060.write_text(text[:-len(marker)] + '\n' + runtime)
+          v060.write_text(text[:-len(marker)] + '\n\n' + runtime)
 
           with styles.open('a') as f:
-              f.write(Path('/tmp/v061-overlay/v061-styles.css').read_text())
+              f.write('\n' + Path('/tmp/v061-overlay/v061-styles.css').read_text())
           PY
           node --check /tmp/chengdu-v061/project/app/src/main/assets/app.js
           node --check /tmp/chengdu-v061/project/app/src/main/assets/v059.js
