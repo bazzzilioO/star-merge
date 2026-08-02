@@ -1,4 +1,4 @@
-name: Build Chengdu v0.5 APK
+name: Build Chengdu v0.5.4 APK
 
 on:
   pull_request:
@@ -6,7 +6,7 @@ on:
 
 jobs:
   build:
-    if: github.head_ref == 'chengdu-2026-v05-build'
+    if: github.head_ref == 'chengdu-2026-v053-fix'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,15 +22,14 @@ jobs:
 
       - name: Restore source
         run: |
-          wc -c chengdu-v05-xz-chunks/part-* || true
           find chengdu-v05-xz-chunks -type f -name 'part-*' -print0 | sort -z | xargs -0 cat > /tmp/chengdu-v05-project.b64
-          wc -c /tmp/chengdu-v05-project.b64
-          sha256sum /tmp/chengdu-v05-project.b64
           echo "84f695b90124c329e4162e32327adcdc3247aea3128c85e4fe35e1adb95f0740  /tmp/chengdu-v05-project.b64" | sha256sum -c -
           base64 --decode /tmp/chengdu-v05-project.b64 > /tmp/chengdu-v05-project.tar.xz
           echo "3a131e57cd9a80a2a6c8ce585ca3853a6ac2f567b30490e14207f809c2234bd9  /tmp/chengdu-v05-project.tar.xz" | sha256sum -c -
           mkdir chengdu-v05
           tar -xJf /tmp/chengdu-v05-project.tar.xz -C chengdu-v05
+          python3 chengdu-v054-patch.py chengdu-v05
+          grep -n "versionCode\|versionName" chengdu-v05/app/build.gradle.kts
 
       - name: Build unsigned release APK
         run: gradle -p chengdu-v05 :app:assembleRelease --stacktrace
@@ -38,5 +37,5 @@ jobs:
       - name: Upload unsigned APK
         uses: actions/upload-artifact@v4
         with:
-          name: chengdu-v05-unsigned
+          name: chengdu-v054-unsigned
           path: chengdu-v05/app/build/outputs/apk/release/app-release-unsigned.apk
