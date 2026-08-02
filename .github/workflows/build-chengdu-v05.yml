@@ -22,13 +22,13 @@ jobs:
 
       - name: Restore source
         run: |
-          find chengdu-v05-chunks -type f -name 'part-*' -print0 | sort -z | xargs -0 cat > /tmp/chengdu-v05-project.b64
-          test "$(wc -c < /tmp/chengdu-v05-project.b64)" = "178392"
-          echo "fb36e358dc04c0285f6b8979f1d04f78b714bb99523fc64039a8ddec44e31199  /tmp/chengdu-v05-project.b64" | sha256sum -c -
-          base64 --decode /tmp/chengdu-v05-project.b64 > /tmp/chengdu-v05-project.tgz
-          echo "d76e63e9081f70d5e55676fa5744f2f2d2afacdda3f40b88226a8786adb18fdd  /tmp/chengdu-v05-project.tgz" | sha256sum -c -
+          find chengdu-v05-xz-chunks -type f -name 'part-*' -print0 | sort -z | xargs -0 cat > /tmp/chengdu-v05-project.b64
+          test "$(wc -c < /tmp/chengdu-v05-project.b64)" = "132152"
+          echo "84f695b90124c329e4162e32327adcdc3247aea3128c85e4fe35e1adb95f0740  /tmp/chengdu-v05-project.b64" | sha256sum -c -
+          base64 --decode /tmp/chengdu-v05-project.b64 > /tmp/chengdu-v05-project.tar.xz
+          echo "3a131e57cd9a80a2a6c8ce585ca3853a6ac2f567b30490e14207f809c2234bd9  /tmp/chengdu-v05-project.tar.xz" | sha256sum -c -
           mkdir chengdu-v05
-          tar -xzf /tmp/chengdu-v05-project.tgz -C chengdu-v05
+          tar -xJf /tmp/chengdu-v05-project.tar.xz -C chengdu-v05
 
       - name: Build unsigned release APK
         run: gradle -p chengdu-v05 :app:assembleRelease --stacktrace
