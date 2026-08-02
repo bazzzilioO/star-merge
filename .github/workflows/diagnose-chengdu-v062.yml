@@ -1,0 +1,25 @@
+name: Diagnose Chengdu v0.6.2 parts
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  diagnose:
+    if: github.head_ref == 'chengdu-2026-v062-build'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect parts
+        run: |
+          wc -c .ci/chengdu-v062/part-*
+          sha256sum .ci/chengdu-v062/part-*
+          cat .ci/chengdu-v062/part-* > /tmp/combined
+          echo "combined $(wc -c < /tmp/combined)"
+          sha256sum /tmp/combined
+          tr -d '\r\n ' < /tmp/combined > /tmp/normalized
+          echo "normalized $(wc -c < /tmp/normalized)"
+          sha256sum /tmp/normalized
+          base64 --decode /tmp/normalized > /tmp/out.tar.xz || true
+          sha256sum /tmp/out.tar.xz || true
+          xz -t /tmp/out.tar.xz || true
