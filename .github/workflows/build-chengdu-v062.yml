@@ -28,14 +28,11 @@ jobs:
           from pathlib import Path
           p = Path('/tmp/original-v062.yml')
           text = p.read_text()
-          old = """          cat .ci/chengdu-v062/part-* > /tmp/v062-overlay.tar.xz.b64
-          test \"$(wc -c < /tmp/v062-overlay.tar.xz.b64)\" = \"55068\"
-"""
-          new = """          head -c 8000 .ci/chengdu-v062/part-00 > /tmp/v062-overlay.tar.xz.b64
-          cat .ci/chengdu-v062/part-0[1-6] >> /tmp/v062-overlay.tar.xz.b64
-          test \"$(wc -c < /tmp/v062-overlay.tar.xz.b64)\" = \"55068\"
-          echo \"535e1bc5944379acb1659b5f3246dc9a617358ff5abc9a07a69830c2524cdcab  /tmp/v062-overlay.tar.xz.b64\" | sha256sum -c -
-"""
+          old = "          cat .ci/chengdu-v062/part-* > /tmp/v062-overlay.tar.xz.b64\n          test \"$(wc -c < /tmp/v062-overlay.tar.xz.b64)\" = \"55068\"\n"
+          new = "          head -c 8000 .ci/chengdu-v062/part-00 > /tmp/v062-overlay.tar.xz.b64\n"
+          new += "          cat .ci/chengdu-v062/part-0[1-6] >> /tmp/v062-overlay.tar.xz.b64\n"
+          new += "          test \"$(wc -c < /tmp/v062-overlay.tar.xz.b64)\" = \"55068\"\n"
+          new += "          echo \"535e1bc5944379acb1659b5f3246dc9a617358ff5abc9a07a69830c2524cdcab  /tmp/v062-overlay.tar.xz.b64\" | sha256sum -c -\n"
           if old not in text:
               raise SystemExit('v0.6.2 reconstruction block not found')
           p.write_text(text.replace(old, new, 1))
