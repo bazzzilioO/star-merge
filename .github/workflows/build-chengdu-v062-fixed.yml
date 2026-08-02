@@ -1,0 +1,55 @@
+name: Build Chengdu v0.6.2 fixed
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    if: github.head_ref == 'chengdu-2026-v062-build'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Execute repaired build steps
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('.github/workflows/build-chengdu-v062.yml')
+          text = p.read_text()
+          old = """          cat .ci/chengdu-v062/part-* > /tmp/v062-overlay.tar.xz.b64
+          test \"$(wc -c < /tmp/v062-overlay.tar.xz.b64)\" = \"55068\"
+"""
+          new = """          head -c 8000 .ci/chengdu-v062/part-00 > /tmp/v062-overlay.tar.xz.b64
+          cat .ci/chengdu-v062/part-0[1-6] >> /tmp/v062-overlay.tar.xz.b64
+          test \"$(wc -c < /tmp/v062-overlay.tar.xz.b64)\" = \"55068\"
+          echo \"535e1bc5944379acb1659b5f3246dc9a617358ff5abc9a07a69830c2524cdcab  /tmp/v062-overlay.tar.xz.b64\" | sha256sum -c -
+"""
+          if old not in text:
+              raise SystemExit('v0.6.2 reconstruction block not found')
+          p.write_text(text.replace(old, new, 1))
+          PY
+          ruby -ryaml -e '
+            doc = YAML.load_file(".github/workflows/build-chengdu-v062.yml")
+            doc.fetch("jobs").fetch("build").fetch("steps").each do |step|
+              run = step["run"]
+              next unless run
+              puts "\n# ---- #{step["name"] || "run"} ----"
+              puts run
+            end
+          ' > /tmp/chengdu-v062-build.sh
+          bash -euxo pipefail /tmp/chengdu-v062-build.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chengdu-v062-build-fixed
+          path: /tmp/dist
