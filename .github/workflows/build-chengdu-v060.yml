@@ -1,0 +1,114 @@
+name: Build Chengdu v0.6.0
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    if: github.head_ref == 'chengdu-2026-v060-build'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Restore clean v0.5.9 source
+        run: |
+          cat .ci/chengdu-v059/part-* > /tmp/chengdu-v059-project.b64
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('/tmp/chengdu-v059-project.b64')
+          data = p.read_text()
+          assert len(data) == 146815, len(data)
+          data = data[:63832] + 'M' + data[63832:]
+          p.write_text(data)
+          PY
+          test "$(wc -c < /tmp/chengdu-v059-project.b64)" = "146816"
+          echo "e39427b93aad8ccb1b9c295fc5c7326c6a6db343edf5d80addd5d418a86aad76  /tmp/chengdu-v059-project.b64" | sha256sum -c -
+          base64 --decode /tmp/chengdu-v059-project.b64 > /tmp/chengdu-v059-project.tar.xz
+          echo "52cd38b98d10c61c610b2d73c0cc33278554ac8d01709f0dfcc745cfc1226fe0  /tmp/chengdu-v059-project.tar.xz" | sha256sum -c -
+          xz -t /tmp/chengdu-v059-project.tar.xz
+          mkdir -p /tmp/chengdu-v060
+          tar -xJf /tmp/chengdu-v059-project.tar.xz -C /tmp/chengdu-v060
+          test -d /tmp/chengdu-v060/project
+          if find /tmp/chengdu-v060/project -type f \( -iname '*.jks' -o -iname 'SIGNING.txt' \) | grep -q .; then
+            echo 'Signing material must not be present in CI source' >&2
+            exit 1
+          fi
+
+      - name: Apply v0.6.0 field-runtime overlay
+        run: |
+          base64 --decode .ci/chengdu-v060/v060-js.xz.b64 > /tmp/v060-js.xz
+          base64 --decode .ci/chengdu-v060/v060-css.xz.b64 > /tmp/v060-css.xz
+          echo "e226bb162473fd597b8c59bd3286ec6902217121ade76f85a4c0928009071596  /tmp/v060-js.xz" | sha256sum -c -
+          echo "b33efe50b5a4ad0d69bbbdd9eed4b29a5088f5cd3116c660f62cf2d71f230600  /tmp/v060-css.xz" | sha256sum -c -
+          xz -dc /tmp/v060-js.xz > /tmp/chengdu-v060/project/app/src/main/assets/v060.js
+          xz -dc /tmp/v060-css.xz >> /tmp/chengdu-v060/project/app/src/main/assets/styles.css
+          echo "4b1eedf0ba4ecb2a50426f407f2dc910b6f9ef86622597ae7e81e59583c7a392  /tmp/chengdu-v060/project/app/src/main/assets/v060.js" | sha256sum -c -
+          python3 - <<'PY'
+          from pathlib import Path
+
+          root = Path('/tmp/chengdu-v060/project')
+          app = root / 'app/src/main/assets/app.js'
+          index = root / 'app/src/main/assets/index.html'
+          gradle = root / 'app/build.gradle.kts'
+
+          text = app.read_text()
+          old = "const APP_VERSION = '0.5.9';"
+          new = "const APP_VERSION = '0.6.0';"
+          assert text.count(old) == 1
+          app.write_text(text.replace(old, new))
+
+          text = index.read_text()
+          old = '  <script src="v059.js"></script>'
+          new = old + '\n  <script src="v060.js"></script>'
+          assert text.count(old) == 1
+          index.write_text(text.replace(old, new))
+
+          text = gradle.read_text()
+          assert text.count('versionCode = 13') == 1
+          assert text.count('versionName = "0.5.9"') == 1
+          text = text.replace('versionCode = 13', 'versionCode = 14')
+          text = text.replace('versionName = "0.5.9"', 'versionName = "0.6.0"')
+          gradle.write_text(text)
+          PY
+          node --check /tmp/chengdu-v060/project/app/src/main/assets/v060.js
+          grep -q 'versionCode = 14' /tmp/chengdu-v060/project/app/build.gradle.kts
+          grep -q 'versionName = "0.6.0"' /tmp/chengdu-v060/project/app/build.gradle.kts
+          grep -q 'v060.js' /tmp/chengdu-v060/project/app/src/main/assets/index.html
+
+      - name: Ensure Android SDK
+        run: |
+          SDKMANAGER="$(find "$ANDROID_HOME" -path '*/cmdline-tools/*/bin/sdkmanager' -type f | sort | tail -n1)"
+          test -x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Build unsigned release
+        run: gradle -p /tmp/chengdu-v060/project clean :app:assembleRelease --stacktrace
+
+      - name: Collect outputs and signing tools
+        run: |
+          mkdir -p /tmp/dist/signing-tools/lib
+          cp /tmp/chengdu-v060/project/app/build/outputs/apk/release/app-release-unsigned.apk /tmp/dist/
+          BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n1)"
+          cp "$BT/zipalign" /tmp/dist/signing-tools/
+          cp "$BT/apksigner" /tmp/dist/signing-tools/
+          cp "$BT/aapt2" /tmp/dist/signing-tools/ || true
+          cp "$BT/lib/apksigner.jar" /tmp/dist/signing-tools/lib/
+          LIBCPP="$(find "$ANDROID_HOME" -name 'libc++.so' -type f | head -n1)"
+          if [ -n "$LIBCPP" ]; then cp "$LIBCPP" /tmp/dist/signing-tools/; fi
+          sha256sum /tmp/dist/app-release-unsigned.apk > /tmp/dist/unsigned.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chengdu-v060-build
+          path: /tmp/dist
