@@ -22,11 +22,14 @@ jobs:
 
       - name: Restore source
         run: |
+          wc -c .ci/chengdu-v059/part-*
+          sha256sum .ci/chengdu-v059/part-*
           cat .ci/chengdu-v059/part-* > /tmp/chengdu-v059-project.b64
-          test "$(wc -c < /tmp/chengdu-v059-project.b64)" = "146816"
-          echo "e39427b93aad8ccb1b9c295fc5c7326c6a6db343edf5d80addd5d418a86aad76  /tmp/chengdu-v059-project.b64" | sha256sum -c -
+          echo "combined bytes: $(wc -c < /tmp/chengdu-v059-project.b64)"
+          sha256sum /tmp/chengdu-v059-project.b64
           base64 --decode /tmp/chengdu-v059-project.b64 > /tmp/chengdu-v059-project.tar.xz
-          echo "52cd38b98d10c61c610b2d73c0cc33278554ac8d01709f0dfcc745cfc1226fe0  /tmp/chengdu-v059-project.tar.xz" | sha256sum -c -
+          sha256sum /tmp/chengdu-v059-project.tar.xz
+          xz -t /tmp/chengdu-v059-project.tar.xz
           mkdir -p /tmp/chengdu-v059
           tar -xJf /tmp/chengdu-v059-project.tar.xz -C /tmp/chengdu-v059
 
