@@ -39,29 +39,25 @@ jobs:
 
       - name: Apply v0.6.3 time-engine fixes
         run: |
-          mkdir -p /tmp/v063-overlay
-          echo "81a21b62246a2d8610d5ddb23445f20d5be0415896316a8465e3f927d61149f6  .ci/chengdu-v063/final-overlay.tar.xz" | sha256sum -c -
-          tar -xJf .ci/chengdu-v063/final-overlay.tar.xz -C /tmp/v063-overlay
-          cp /tmp/v063-overlay/app/src/main/assets/app.js /tmp/chengdu-v062/project/app/src/main/assets/app.js
-          cp /tmp/v063-overlay/app/src/main/assets/v060.js /tmp/chengdu-v062/project/app/src/main/assets/v060.js
-          cp /tmp/v063-overlay/app/src/main/assets/styles.css /tmp/chengdu-v062/project/app/src/main/assets/styles.css
-          cp /tmp/v063-overlay/app/build.gradle.kts /tmp/chengdu-v062/project/app/build.gradle.kts
-          echo "12c8b1571d2f1481b39e33e0dc492085e90ae3abc10f8321c14a2cd2846c0b73  /tmp/chengdu-v062/project/app/src/main/assets/app.js" | sha256sum -c -
-          echo "d0e4aa1854098fefdeb598f7ebbba33dec04e72bd0b3752506a27f7553bd92b5  /tmp/chengdu-v062/project/app/src/main/assets/v060.js" | sha256sum -c -
-          echo "f3a9c7b5a01b552076242b9c377281187688c19f2ab60d0bc1ea56970c717744  /tmp/chengdu-v062/project/app/src/main/assets/styles.css" | sha256sum -c -
-          echo "bb11d7f34965b84e7d19492ebe89cbcc6f2cd5a3eb80c98aa2613f724247029d  /tmp/chengdu-v062/project/app/build.gradle.kts" | sha256sum -c -
-          grep -q 'versionCode = 17' /tmp/chengdu-v062/project/app/build.gradle.kts
-          grep -q 'versionName = "0.6.3"' /tmp/chengdu-v062/project/app/build.gradle.kts
-          node --check /tmp/chengdu-v062/project/app/src/main/assets/app.js
-          node --check /tmp/chengdu-v062/project/app/src/main/assets/v060.js
-          if find /tmp/chengdu-v062/project -type f \( -iname '*.jks' -o -iname 'SIGNING.txt' \) | grep -q .; then
+          echo "4a794b42fdefe17d3b045b1962aab582c03ff1f8aa9abae015d7feadc203cea0  .ci/chengdu-v063/v063.patch" | sha256sum -c -
+          cd /tmp/chengdu-v062/project
+          patch -p1 --forward < "$GITHUB_WORKSPACE/.ci/chengdu-v063/v063.patch"
+          echo "12c8b1571d2f1481b39e33e0dc492085e90ae3abc10f8321c14a2cd2846c0b73  app/src/main/assets/app.js" | sha256sum -c -
+          echo "d0e4aa1854098fefdeb598f7ebbba33dec04e72bd0b3752506a27f7553bd92b5  app/src/main/assets/v060.js" | sha256sum -c -
+          echo "f3a9c7b5a01b552076242b9c377281187688c19f2ab60d0bc1ea56970c717744  app/src/main/assets/styles.css" | sha256sum -c -
+          echo "bb11d7f34965b84e7d19492ebe89cbcc6f2cd5a3eb80c98aa2613f724247029d  app/build.gradle.kts" | sha256sum -c -
+          grep -q 'versionCode = 17' app/build.gradle.kts
+          grep -q 'versionName = "0.6.3"' app/build.gradle.kts
+          node --check app/src/main/assets/app.js
+          node --check app/src/main/assets/v060.js
+          if find . -type f \( -iname '*.jks' -o -iname 'SIGNING.txt' \) | grep -q .; then
             echo 'Signing material must not be present in CI source' >&2
             exit 1
           fi
 
       - name: Build unsigned v0.6.3
         run: |
-          SDKMANAGER=$(find "$ANDROID_HOME" -path '*/cmdline-tools/*/bin/sdkmanager' -type f | sort | tail -n1)
+          SDKMANAGER=$(find "$ANDROID_HOME" -path '*/cmdline-tools/*/bin/sdkmanager' -type f -print -quit)
           yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER" 'platforms;android-35' 'build-tools;35.0.0'
           gradle -p /tmp/chengdu-v062/project clean :app:assembleRelease --stacktrace
