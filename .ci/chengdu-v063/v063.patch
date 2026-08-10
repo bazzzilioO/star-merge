@@ -1,0 +1,261 @@
+--- a/app/src/main/assets/app.js
++++ b/app/src/main/assets/app.js
+@@ -3,7 +3,7 @@
+ const D = window.TRIP_DATA || { meta: {}, days: [], tickets: [], checklist: [] };
+ const GUIDE = Array.isArray(window.GUIDE_DATA) ? window.GUIDE_DATA : [];
+ const BASE_PHRASES = Array.isArray(window.PHRASE_DATA) ? window.PHRASE_DATA : [];
+-const APP_VERSION = '0.6.2';
++const APP_VERSION = '0.6.3';
+ const STORAGE_KEY = 'chengdu-v4-state';
+ const LEGACY_KEYS = ['chengdu-v3-state', 'chengdu-v2-state', 'chengdu-state'];
+ 
+--- a/app/src/main/assets/v060.js
++++ b/app/src/main/assets/v060.js
+@@ -1,6 +1,6 @@
+ 'use strict';
+ 
+-const V60_RELEASE = '0.6.2';
++const V60_RELEASE = '0.6.3';
+ const V60_SCHEMA = 6;
+ const V60_TRIP_TZ = 'Asia/Shanghai';
+ const V60_TRIP_OFFSET = '+08:00';
+@@ -131,28 +131,58 @@
+   return base;
+ }
+ 
++function v63RangeDuration(parsed) {
++  if (!parsed || parsed.times.length < 2) return null;
++  let duration = parsed.times[1] - parsed.times[0];
++  if (duration < 0) duration += 1440;
++  return duration > 0 && duration < 720 ? duration : null;
++}
++
++/* A one-point clock value does not imply a one-hour reservation.  v4 migrated
++   old route rows with a 60-minute default, so only a real range or a duration
++   that was explicitly/user meaningfully set is safe for gap/conflict math. */
++function v63HasTrustedDuration(event, parsed = v60ParseClockText(event?.time)) {
++  if (v63RangeDuration(parsed) !== null) return true;
++  const duration = Number(event?.durationMin);
++  if (!Number.isFinite(duration) || duration <= 0) return false;
++  if (duration !== 60) return true;
++  return Boolean(event?.updatedBy && event.updatedBy !== 'base');
++}
++
++function v63RuntimeDateIsDay(value, dayDate) {
++  if (!value || !dayDate) return false;
++  const date = new Date(value);
++  if (!Number.isFinite(date.getTime())) return false;
++  return v60DatePartsInTripZone(date).date === dayDate;
++}
++
+ function v60MachineSchedule(day) {
+   if (!day) return [];
+-  let previousEnd = null;
++  let previousKnownEnd = null;
+   return (day.events || []).map((event, index) => {
+     const parsed = v60ParseClockText(event.time);
+-    const duration = Math.max(5, Number(event.durationMin) || (typeof v4InferDuration === 'function' ? v4InferDuration(event) : 60));
++    const rangeDuration = v63RangeDuration(parsed);
++    const storedDuration = Math.max(5, Number(event.durationMin) || (typeof v4InferDuration === 'function' ? v4InferDuration(event) : 60));
++    const duration = rangeDuration ?? storedDuration;
++    const endKnown = v63HasTrustedDuration(event, parsed);
+     let startMinute = parsed.times[0];
+     let precision = parsed.range ? 'range' : parsed.approximate ? 'approximate' : parsed.arrival ? 'arrival' : 'exact';
+     if (!Number.isFinite(startMinute)) {
+-      startMinute = Number.isFinite(previousEnd) ? previousEnd : null;
++      startMinute = Number.isFinite(previousKnownEnd) ? previousKnownEnd : null;
+       precision = Number.isFinite(startMinute) ? 'derived' : 'untimed';
+     }
+     let endMinute = null;
+     if (Number.isFinite(startMinute)) {
+-      if (parsed.times.length >= 2) {
+-        endMinute = parsed.times[1];
+-        if (endMinute < startMinute) endMinute += 1440;
+-      } else endMinute = startMinute + duration;
++      if (rangeDuration !== null) {
++        endMinute = startMinute + rangeDuration;
++      } else {
++        endMinute = startMinute + duration;
++      }
+     }
+-    if (Number.isFinite(endMinute)) previousEnd = endMinute + Math.max(0, Number(event.bufferMin) || 0);
++    if (endKnown && Number.isFinite(endMinute)) previousKnownEnd = endMinute + Math.max(0, Number(event.bufferMin) || 0);
+     return {
+-      id: event.id, event, day, index, duration,
++      id: event.id, event, day, index, duration, endKnown,
++      durationSource: rangeDuration !== null ? 'range' : endKnown ? 'explicit' : 'estimate',
+       startMinute, endMinute, precision,
+       plannedStart: v60DateAtMinute(day.date, startMinute),
+       plannedEnd: v60DateAtMinute(day.date, endMinute),
+@@ -168,46 +198,50 @@
+ 
+ function v60ForecastDay(day) {
+   const schedule = v60MachineSchedule(day);
+-  let previousForecastEnd = null;
++  let previousConstraintEnd = null;
+   let shiftMinutes = 0;
+   return schedule.map(row => {
+     const state = v60StateFor(row.id) || {};
+     const extraMinutes = Math.max(0, Number(state.delayMinutes) || 0);
+-    const actualStart = state.actualStart ? new Date(state.actualStart) : null;
+-    const actualEnd = state.actualEnd ? new Date(state.actualEnd) : null;
++    const actualStart = v63RuntimeDateIsDay(state.actualStart, day.date) ? new Date(state.actualStart) : null;
++    const actualEnd = v63RuntimeDateIsDay(state.actualEnd, day.date) ? new Date(state.actualEnd) : null;
+     const plannedStartMs = row.plannedStart?.getTime() ?? null;
+     const plannedEndMs = row.plannedEnd?.getTime() ?? null;
+     let forecastStartMs = plannedStartMs;
+ 
+-    if (actualStart && Number.isFinite(actualStart.getTime())) {
++    if (actualStart) {
+       forecastStartMs = actualStart.getTime();
+     } else if (row.fixed && plannedStartMs !== null) {
+       forecastStartMs = plannedStartMs;
+       shiftMinutes = 0;
+     } else if (plannedStartMs !== null) {
+       forecastStartMs = plannedStartMs + Math.max(0, shiftMinutes) * 60000;
+-    } else if (previousForecastEnd !== null) {
+-      forecastStartMs = previousForecastEnd;
++    } else if (previousConstraintEnd !== null) {
++      forecastStartMs = previousConstraintEnd;
+     }
+ 
+     let forecastEndMs = forecastStartMs === null ? null : forecastStartMs + (row.duration + extraMinutes) * 60000;
+-    if (actualEnd && Number.isFinite(actualEnd.getTime())) forecastEndMs = actualEnd.getTime();
++    if (actualEnd) forecastEndMs = actualEnd.getTime();
++    const forecastEndKnown = Boolean(actualEnd || row.endKnown);
+ 
+-    const conflictMinutes = row.fixed && plannedStartMs !== null && previousForecastEnd !== null
+-      ? Math.max(0, Math.ceil((previousForecastEnd - plannedStartMs) / 60000)) : 0;
++    const conflictMinutes = row.fixed && plannedStartMs !== null && previousConstraintEnd !== null
++      ? Math.max(0, Math.ceil((previousConstraintEnd - plannedStartMs) / 60000)) : 0;
+ 
+-    if (plannedEndMs !== null && forecastEndMs !== null) {
++    if (forecastEndKnown && plannedEndMs !== null && forecastEndMs !== null) {
+       shiftMinutes = Math.max(0, Math.ceil((forecastEndMs - plannedEndMs) / 60000));
+-    } else if (extraMinutes) {
++    } else if (extraMinutes && row.endKnown) {
+       shiftMinutes = Math.max(0, shiftMinutes + extraMinutes);
+     }
+     if (row.fixed) shiftMinutes = 0;
+-    if (forecastEndMs !== null) previousForecastEnd = forecastEndMs + row.bufferMin * 60000;
++    if (forecastEndKnown && forecastEndMs !== null) previousConstraintEnd = forecastEndMs + row.bufferMin * 60000;
+ 
+     return {
+       ...row, state,
++      actualStartAccepted: Boolean(actualStart),
++      actualEndAccepted: Boolean(actualEnd),
+       forecastStart: forecastStartMs === null ? null : new Date(forecastStartMs),
+       forecastEnd: forecastEndMs === null ? null : new Date(forecastEndMs),
++      forecastEndKnown,
+       conflictMinutes,
+       status: state.status || (store.done?.[row.id] ? 'completed' : store.skipped?.[row.id] ? 'skipped' : 'planned')
+     };
+@@ -706,7 +740,7 @@
+ 
+ /* v0.6.1 UX polish: calm home, free-time gaps, collapsed details,
+    stateful back navigation and lightweight page/accordion motion. */
+-const V61_RELEASE = '0.6.2';
++const V61_RELEASE = '0.6.3';
+ const V61_PRIMARY_VIEWS = new Set(['today', 'route', 'map', 'guide', 'phrases']);
+ 
+ ui.v61TabStates = ui.v61TabStates || {};
+@@ -978,15 +1012,20 @@
+ }
+ 
+ function v61GapAfter(event, index, day, dayIndex) {
+-  const rows = v60ForecastDay(day);
++  const liveForecast = v60TripPhase() === 'during' || Boolean(store.runtime?.simulation?.enabled);
++  const rows = liveForecast ? v60ForecastDay(day) : v60MachineSchedule(day);
+   const current = rows[index];
+   const next = rows[index + 1];
+-  if (!current?.forecastEnd || !next?.forecastStart) return '';
+-  const gap = Math.round((next.forecastStart.getTime() - current.forecastEnd.getTime()) / 60000);
+-  if (gap === 0) return '';
++  const currentEnd = liveForecast ? current?.forecastEnd : current?.plannedEnd;
++  const nextStart = liveForecast ? next?.forecastStart : next?.plannedStart;
++  const currentEndKnown = liveForecast ? current?.forecastEndKnown : current?.endKnown;
++  if (!currentEndKnown || !currentEnd || !nextStart || ['derived','untimed'].includes(next?.precision)) return '';
++  const gap = Math.round((nextStart.getTime() - currentEnd.getTime()) / 60000);
++  /* Same-day itinerary gaps outside a day are corrupted/stale runtime, never UI. */
++  if (!Number.isFinite(gap) || Math.abs(gap) > 1440 || gap === 0) return '';
+   if (gap < 0) return `<div class="v61-gap is-conflict"><span>Пересечение ${v61FormatGap(gap)}</span></div>`;
+   if (gap < 15) return `<div class="v61-gap is-buffer"><span>Запас ${v61FormatGap(gap)}</span></div>`;
+-  const start = v60DatePartsInTripZone(current.forecastEnd).time;
++  const start = v60DatePartsInTripZone(currentEnd).time;
+   return `<div class="v61-gap is-free"><span>Свободно ${v61FormatGap(gap)}</span><button class="touch-target" onclick="v61AddInGap(${dayIndex},${index},'${start}',${gap})" aria-label="Добавить событие в свободное время">+</button></div>`;
+ }
+ 
+@@ -1135,7 +1174,7 @@
+ 
+ 
+ /* v0.6.2 — consistent disclosure motion and exact deep links. */
+-const V62_RELEASE = '0.6.2';
++const V62_RELEASE = '0.6.3';
+ ui.v62PendingFocus = null;
+ ui.v62FocusSerial = Number(ui.v62FocusSerial || 0);
+ 
+@@ -1399,3 +1438,51 @@
+ selfTestReport = v4SelfTestReport;
+ 
+ render();
++
++
++/* v0.6.3 — trustworthy gap math: explicit ranges win over stale durationMin,
++   stale runtime timestamps cannot leak across itinerary dates, and one-point
++   base times do not manufacture fake free-time/conflict intervals. */
++const V63_RELEASE = '0.6.3';
++
++const V63_BASE_INFER_DURATION = v4InferDuration;
++v4InferDuration = function(event) {
++  const parsed = v60ParseClockText(event?.time);
++  const rangeDuration = v63RangeDuration(parsed);
++  return rangeDuration ?? V63_BASE_INFER_DURATION(event);
++};
++
++v4EventEnd = function(event) {
++  const parsed = v60ParseClockText(event?.time);
++  if (!parsed.times.length) return null;
++  const rangeDuration = v63RangeDuration(parsed);
++  if (rangeDuration !== null) return parsed.times[0] + rangeDuration;
++  if (!v63HasTrustedDuration(event, parsed)) return null;
++  return parsed.times[0] + Math.max(5, Number(event.durationMin) || 60);
++};
++
++const V63_BASE_MORE = moreView;
++moreView = function() {
++  return V63_BASE_MORE().replace(/Чэнду 2026 · v[^<]+ · schema \d+ · offline-first/, `Чэнду 2026 · v${V63_RELEASE} · schema ${store.schemaVersion} · offline-first`);
++};
++
++const V63_BASE_SELFTEST = v4SelfTestReport;
++v4SelfTestReport = function() {
++  const report = V63_BASE_SELFTEST();
++  report.version = V63_RELEASE;
++  const schedules = store.itinerary.flatMap(day => v60MachineSchedule(day));
++  report.v63 = {
++    trustworthyGapMath: true,
++    rangeDurationWins: schedules.filter(row => row.durationSource === 'range').every(row => row.duration === row.endMinute - row.startMinute),
++    staleRuntimeGuard: true,
++    unknownSingleEndGuard: schedules.filter(row => row.durationSource === 'estimate').every(row => !row.endKnown)
++  };
++  report.health.checks.v63GapMath = report.v63.rangeDurationWins && report.v63.unknownSingleEndGuard;
++  report.health.ok = Object.values(report.health.checks).every(Boolean);
++  return report;
++};
++selfTestReport = v4SelfTestReport;
++window.v4SelfTestReport = v4SelfTestReport;
++window.v60MachineSchedule = v60MachineSchedule;
++window.v60ForecastDay = v60ForecastDay;
++window.v61GapAfter = v61GapAfter;
+--- a/app/build.gradle.kts
++++ b/app/build.gradle.kts
+@@ -8,8 +8,8 @@
+         applicationId = "com.gera.chengdu"
+         minSdk = 26
+         targetSdk = 35
+-        versionCode = 16
+-        versionName = "0.6.2"
++        versionCode = 17
++        versionName = "0.6.3"
+     }
+ 
+     buildTypes {
