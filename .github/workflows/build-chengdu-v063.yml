@@ -1,0 +1,98 @@
+name: Build Chengdu v0.6.3
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    if: github.head_ref == 'chengdu-2026-v063-build'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Restore verified v0.6.2 source
+        run: |
+          git fetch origin 4b36c546e8ae6b9474b1ff76bd23bd8c439c4d1a --depth=1
+          git checkout 4b36c546e8ae6b9474b1ff76bd23bd8c439c4d1a -- .ci/chengdu-v059 .ci/chengdu-v060 .ci/chengdu-v061 .ci/chengdu-v062
+          git show 4b36c546e8ae6b9474b1ff76bd23bd8c439c4d1a:.github/workflows/build-chengdu-v062.yml > /tmp/v062.yml
+          ruby -ryaml -e '
+            doc = YAML.load_file("/tmp/v062.yml")
+            doc.fetch("jobs").fetch("build").fetch("steps").each do |step|
+              run = step["run"]
+              next unless run
+              puts "\n# ---- #{step["name"] || "run"} ----"
+              puts run
+            end
+          ' > /tmp/rebuild-v062.sh
+          bash -euxo pipefail /tmp/rebuild-v062.sh
+          test -f /tmp/chengdu-v062/project/app/build/outputs/apk/release/app-release-unsigned.apk
+
+      - name: Apply v0.6.3 time-engine fixes
+        run: |
+          mkdir -p /tmp/v063-overlay
+          echo "81a21b62246a2d8610d5ddb23445f20d5be0415896316a8465e3f927d61149f6  .ci/chengdu-v063/final-overlay.tar.xz" | sha256sum -c -
+          tar -xJf .ci/chengdu-v063/final-overlay.tar.xz -C /tmp/v063-overlay
+          cp /tmp/v063-overlay/app/src/main/assets/app.js /tmp/chengdu-v062/project/app/src/main/assets/app.js
+          cp /tmp/v063-overlay/app/src/main/assets/v060.js /tmp/chengdu-v062/project/app/src/main/assets/v060.js
+          cp /tmp/v063-overlay/app/src/main/assets/styles.css /tmp/chengdu-v062/project/app/src/main/assets/styles.css
+          cp /tmp/v063-overlay/app/build.gradle.kts /tmp/chengdu-v062/project/app/build.gradle.kts
+          echo "12c8b1571d2f1481b39e33e0dc492085e90ae3abc10f8321c14a2cd2846c0b73  /tmp/chengdu-v062/project/app/src/main/assets/app.js" | sha256sum -c -
+          echo "d0e4aa1854098fefdeb598f7ebbba33dec04e72bd0b3752506a27f7553bd92b5  /tmp/chengdu-v062/project/app/src/main/assets/v060.js" | sha256sum -c -
+          echo "f3a9c7b5a01b552076242b9c377281187688c19f2ab60d0bc1ea56970c717744  /tmp/chengdu-v062/project/app/src/main/assets/styles.css" | sha256sum -c -
+          echo "bb11d7f34965b84e7d19492ebe89cbcc6f2cd5a3eb80c98aa2613f724247029d  /tmp/chengdu-v062/project/app/build.gradle.kts" | sha256sum -c -
+          grep -q 'versionCode = 17' /tmp/chengdu-v062/project/app/build.gradle.kts
+          grep -q 'versionName = "0.6.3"' /tmp/chengdu-v062/project/app/build.gradle.kts
+          node --check /tmp/chengdu-v062/project/app/src/main/assets/app.js
+          node --check /tmp/chengdu-v062/project/app/src/main/assets/v060.js
+          if find /tmp/chengdu-v062/project -type f \( -iname '*.jks' -o -iname 'SIGNING.txt' \) | grep -q .; then
+            echo 'Signing material must not be present in CI source' >&2
+            exit 1
+          fi
+
+      - name: Build unsigned v0.6.3
+        run: |
+          SDKMANAGER=$(find "$ANDROID_HOME" -path '*/cmdline-tools/*/bin/sdkmanager' -type f | sort | tail -n1)
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" 'platforms;android-35' 'build-tools;35.0.0'
+          gradle -p /tmp/chengdu-v062/project clean :app:assembleRelease --stacktrace
+
+      - name: Collect unsigned APK and signing tools
+        run: |
+          rm -rf /tmp/dist-v063
+          mkdir -p /tmp/dist-v063/signing-tools/lib /tmp/dist-v063/project-assets
+          cp /tmp/chengdu-v062/project/app/build/outputs/apk/release/app-release-unsigned.apk /tmp/dist-v063/
+          BT=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n1)
+          cp "$BT/zipalign" /tmp/dist-v063/signing-tools/
+          cp "$BT/apksigner" /tmp/dist-v063/signing-tools/
+          cp "$BT/aapt2" /tmp/dist-v063/signing-tools/
+          cp "$BT/lib/apksigner.jar" /tmp/dist-v063/signing-tools/lib/
+          python3 - <<'PY'
+          from pathlib import Path
+          roots=[Path('/usr/local/lib/android/sdk'), Path.home()/'.android']
+          found=[]
+          for root in roots:
+              if root.exists(): found += list(root.rglob('libc++.so'))
+          if found:
+              out=Path('/tmp/dist-v063/signing-tools/lib64'); out.mkdir(parents=True,exist_ok=True)
+              (out/'libc++.so').write_bytes(found[0].read_bytes())
+          PY
+          cp /tmp/chengdu-v062/project/app/src/main/assets/app.js /tmp/dist-v063/project-assets/
+          cp /tmp/chengdu-v062/project/app/src/main/assets/v060.js /tmp/dist-v063/project-assets/
+          cp /tmp/chengdu-v062/project/app/src/main/assets/styles.css /tmp/dist-v063/project-assets/
+          cp /tmp/chengdu-v062/project/app/build.gradle.kts /tmp/dist-v063/project-assets/
+          sha256sum /tmp/dist-v063/app-release-unsigned.apk > /tmp/dist-v063/unsigned-sha256.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chengdu-v063-build
+          path: /tmp/dist-v063
