@@ -27,15 +27,15 @@ jobs:
           git show 4b36c546e8ae6b9474b1ff76bd23bd8c439c4d1a:.github/workflows/build-chengdu-v062.yml > /tmp/v062.yml
           ruby -ryaml -e '
             doc = YAML.load_file("/tmp/v062.yml")
-            doc.fetch("jobs").fetch("build").fetch("steps").each do |step|
-              run = step["run"]
-              next unless run
+            doc.fetch("jobs").fetch("build").fetch("steps").select { |s| s["run"] }.first(4).each do |step|
               puts "\n# ---- #{step["name"] || "run"} ----"
-              puts run
+              puts step["run"]
             end
-          ' > /tmp/rebuild-v062.sh
-          bash -euxo pipefail /tmp/rebuild-v062.sh
-          test -f /tmp/chengdu-v062/project/app/build/outputs/apk/release/app-release-unsigned.apk
+          ' > /tmp/rebuild-v062-source.sh
+          bash -euxo pipefail /tmp/rebuild-v062-source.sh
+          test -f /tmp/chengdu-v062/project/app/src/main/assets/app.js
+          grep -q "const APP_VERSION = '0.6.2';" /tmp/chengdu-v062/project/app/src/main/assets/app.js
+          grep -q 'versionCode = 16' /tmp/chengdu-v062/project/app/build.gradle.kts
 
       - name: Apply v0.6.3 time-engine fixes
         run: |
