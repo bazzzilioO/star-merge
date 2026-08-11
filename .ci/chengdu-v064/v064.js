@@ -14,7 +14,7 @@ function v64ActualFor(eventId) { return store.costs?.actual?.[eventId] || null; 
 function v64Rub(value) { return Math.round(Number(value) || 0).toLocaleString('ru-RU'); }
 function v64Range(min, max) {
   min = Math.round(Number(min) || 0); max = Math.round(Number(max) || min);
-  return min === max ? `¥${v64Rub(min)}` : `¥${v64Rub(min)}–¥${v64Rub(max)}`;
+  return min === max ? `¥${v64Rub(min)}` : `¥${v64Rub(min)}–${v64Rub(max)}`;
 }
 function v64ConfidenceLabel(value) {
   return ({ official:'официально', market:'актуальный ориентир', route:'из маршрута', estimate:'оценка', mixed:'смешанные источники' })[value] || 'ориентир';
@@ -65,6 +65,7 @@ function v64CostBody(eventId) {
   const cost = v64CostFor(eventId);
   if (!cost) return '';
   const actual = v64ActualFor(eventId);
+  const budget = v64BudgetFor(eventId, cost);
   const expected = cost.includeInDay === false ? 'Не входит в дневной расход' : `${v64Range(cost.min, cost.max)} · ${v64UnitLabel(cost)}`;
   return `<div class="v64-cost-body">
     <div class="v64-cost-head"><span class="v64-confidence is-${esc(cost.confidence)}">${esc(v64ConfidenceLabel(cost.confidence))}</span><small>проверено ${esc(cost.checked || V64_META.checked || '')}</small></div>
@@ -81,7 +82,7 @@ function v64CostBody(eventId) {
     ${cost.source?.url ? `<button class="v64-source" onclick="native('openUrl','${escJs(cost.source.url)}')"><span>Источник</span><b>${esc(cost.source.label || 'Открыть')}</b><i>↗</i></button>` : `<div class="v64-source is-local"><span>Основа</span><b>${cost.confidence === 'route' ? 'маршрут Геры + Яны' : 'контрольный диапазон'}</b></div>`}
   </div>`;
 }
-function v64CostDetails(eventId) {
+function v64CostDetails(eventId, context = 'event') {
   const cost = v64CostFor(eventId);
   if (!cost) return '';
   return `<details class="v64-cost-details" data-v64-event="${esc(eventId)}"><summary><span>Стоимость</span><b>${esc(v64ActualFor(eventId) ? `факт ¥${v64Rub(v64ActualFor(eventId).amount)}` : cost.headline)}</b><i>›</i></summary>${v64CostBody(eventId)}</details>`;
@@ -146,7 +147,7 @@ v60NowView = function() {
   let html = V64_BASE_NOW_VIEW();
   const row = v60CurrentContext();
   if (!row?.event || !v64CostFor(row.event.id)) return html;
-  return html.replace('<div class="v60-field-actions">', `${v64CostDetails(row.event.id)}<div class="v60-field-actions">`);
+  return html.replace('<div class="v60-field-actions">', `${v64CostDetails(row.event.id,'now')}<div class="v60-field-actions">`);
 };
 v58NowView = v60NowView; window.v58NowView=v60NowView; window.v59NowView=v60NowView; window.v60NowView=v60NowView;
 
