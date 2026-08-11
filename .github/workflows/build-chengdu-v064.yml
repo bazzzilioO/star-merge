@@ -42,9 +42,15 @@ jobs:
 
       - name: Apply v0.6.4 cost intelligence
         run: |
-          cp .ci/chengdu-v064/cost-data.js /tmp/chengdu-v062/project/app/src/main/assets/cost-data.js
-          cp .ci/chengdu-v064/v064.js /tmp/chengdu-v062/project/app/src/main/assets/v064.js
-          cp .ci/chengdu-v064/v064.css /tmp/chengdu-v062/project/app/src/main/assets/v064.css
+          base64 --decode .ci/chengdu-v064/cost-data.js.xz.b64 > /tmp/v064-cost.xz
+          base64 --decode .ci/chengdu-v064/v064.js.xz.b64 > /tmp/v064-js.xz
+          base64 --decode .ci/chengdu-v064/v064.css.xz.b64 > /tmp/v064-css.xz
+          echo 'b39ed067801fdea1b519624456d28daaa93bfe0e42d79ebbb106fa789d865d98  /tmp/v064-cost.xz' | sha256sum -c -
+          echo '9c1dcece52fd98c8f3ee5a7e4a91b42d40b364c79719846f0eb99bc74a577d11  /tmp/v064-js.xz' | sha256sum -c -
+          echo '7d249766b4dff98d9e609779c8fbfbae4b344b22b5c0e55d233096f24d1e8f6b  /tmp/v064-css.xz' | sha256sum -c -
+          xz -dc /tmp/v064-cost.xz > /tmp/chengdu-v062/project/app/src/main/assets/cost-data.js
+          xz -dc /tmp/v064-js.xz > /tmp/chengdu-v062/project/app/src/main/assets/v064.js
+          xz -dc /tmp/v064-css.xz > /tmp/chengdu-v062/project/app/src/main/assets/v064.css
           python3 - <<'PY'
           from pathlib import Path
           root=Path('/tmp/chengdu-v062/project')
