@@ -1,0 +1,64 @@
+name: Build Vocal OS Public Alpha 0.2
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    if: github.head_ref == 'vocalos-public-alpha-v02'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Verify and restore source
+        run: |
+          echo "663193ab80651c10f9e8928aa3a91c506341e9960de4689d778ca3fbe0488341  Vocal-OS-public-alpha-0.2-source.tar.gz" | sha256sum -c -
+          tar -xzf Vocal-OS-public-alpha-0.2-source.tar.gz
+          test "$(grep -RIl 'ARKA\|com.arka' vocalos-public-alpha-v02 | wc -l)" = "0"
+          grep -q "targetSdk 36" vocalos-public-alpha-v02/app/build.gradle
+          grep -q "trainerCanvas" vocalos-public-alpha-v02/app/src/main/assets/index.html
+          grep -q "alpha02" vocalos-public-alpha-v02/app/build.gradle
+
+      - name: Static web QA
+        run: |
+          python3 - <<'PY'
+          import re, pathlib, xml.etree.ElementTree as ET
+          root = pathlib.Path('vocalos-public-alpha-v02')
+          html = (root/'app/src/main/assets/index.html').read_text(encoding='utf-8')
+          scripts = re.findall(r'<script[^>]*>([\s\S]*?)</script>', html)
+          assert scripts, 'No script block found'
+          pathlib.Path('/tmp/vocalos-app.js').write_text(scripts[-1], encoding='utf-8')
+          ids = re.findall(r'\bid="([^"]+)"', html)
+          assert len(ids) == len(set(ids)), 'Duplicate HTML ids found'
+          for p in [root/'app/src/main/AndroidManifest.xml', root/'app/src/main/res/drawable/ic_launcher.xml', root/'app/src/main/res/values/styles.xml']:
+              ET.parse(p)
+          PY
+          node --check /tmp/vocalos-app.js
+
+      - name: Build API 36 APK and App Bundle
+        run: gradle -p vocalos-public-alpha-v02 :app:assembleDebug :app:bundleDebug --stacktrace
+
+      - name: Artifact smoke checks
+        run: |
+          unzip -t vocalos-public-alpha-v02/app/build/outputs/apk/debug/app-debug.apk >/dev/null
+          unzip -t vocalos-public-alpha-v02/app/build/outputs/bundle/debug/app-debug.aab >/dev/null
+          unzip -l vocalos-public-alpha-v02/app/build/outputs/apk/debug/app-debug.apk | grep -q 'classes.dex'
+          unzip -l vocalos-public-alpha-v02/app/build/outputs/apk/debug/app-debug.apk | grep -q 'AndroidManifest.xml'
+
+      - name: Upload APK and AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: Vocal-OS-public-alpha-0.2
+          path: |
+            vocalos-public-alpha-v02/app/build/outputs/apk/debug/app-debug.apk
+            vocalos-public-alpha-v02/app/build/outputs/bundle/debug/app-debug.aab
