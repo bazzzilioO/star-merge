@@ -22,9 +22,10 @@ jobs:
 
       - name: Restore verified source
         run: |
-          head -c 6000 arka-vocal-v02-chunks/part-02 > /tmp/part-02-fixed
+          cat arka-vocal-v02-repair/seg-* > /tmp/part-02-fixed
+          test "$(wc -c < /tmp/part-02-fixed)" = "6000"
           echo "19334cb333ff60400e2a3ba2ba60683828d0958a8b88e6ae9169b763af6e531a  /tmp/part-02-fixed" | sha256sum -c -
-          mv /tmp/part-02-fixed arka-vocal-v02-chunks/part-02
+          cp /tmp/part-02-fixed arka-vocal-v02-chunks/part-02
           find arka-vocal-v02-chunks -type f -name 'part-*' -print0 | sort -z | xargs -0 cat > /tmp/arka-vocal-v02-source.b64
           test "$(wc -c < /tmp/arka-vocal-v02-source.b64)" = "34980"
           echo "1d10523f7ced0a91596db4c87b003f904854f87981069636dcda9f4f7201dec7  /tmp/arka-vocal-v02-source.b64" | sha256sum -c -
