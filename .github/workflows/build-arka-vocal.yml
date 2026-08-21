@@ -1,0 +1,38 @@
+name: Build ARKA Vocal APK
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    if: github.head_ref == 'arka-vocal-apk-v01'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Restore source
+        run: |
+          test "$(wc -c < arka-vocal-source.b64)" = "15260"
+          echo "7dd4a8e89a27339c07d352ece97b91b243260f87a27561b14388c9c65a22f167  arka-vocal-source.b64" | sha256sum -c -
+          base64 --decode arka-vocal-source.b64 > /tmp/arka-vocal.tgz
+          echo "fdaebf0a582e359fcba410f682a01ed8bc3ec5ab5498e71d195af83727f7973b  /tmp/arka-vocal.tgz" | sha256sum -c -
+          tar -xzf /tmp/arka-vocal.tgz
+
+      - name: Build installable debug APK
+        run: gradle -p arka-vocal-app :app:assembleDebug --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ARKA-Vocal-v0.1-debug
+          path: arka-vocal-app/app/build/outputs/apk/debug/app-debug.apk
