@@ -1,0 +1,108 @@
+name: Build Vocal OS Public Alpha 0.3
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    if: github.head_ref == 'vocalos-public-alpha-v03-final'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Restore verified 0.2 base
+        run: |
+          cat \
+            vocalos-v02-parts/00 \
+            vocalos-v02-parts/01 \
+            vocalos-v02-parts/02 \
+            vocalos-v02-parts/03a \
+            vocalos-v02-parts/03b \
+            vocalos-v02-parts/04a \
+            vocalos-v02-parts/04b00 \
+            vocalos-v02-parts/04b01 \
+            vocalos-v02-parts/04b02 \
+            vocalos-v02-parts/04b03 \
+            vocalos-v02-parts/05a00 \
+            vocalos-v02-parts/05a01 \
+            vocalos-v02-parts/05a02 \
+            vocalos-v02-parts/05a03 \
+            vocalos-v02-parts/05b00 \
+            vocalos-v02-parts/05b01 \
+            vocalos-v02-parts/05b02 \
+            vocalos-v02-parts/05b03 \
+            > /tmp/v02.tar.gz
+          echo "d309fbcaae620570867b12da62a9d6752c23a980f5ccffe3e9adb988e5ceff7c  /tmp/v02.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/v02.tar.gz
+
+      - name: Apply range-calibration UX patch
+        run: |
+          cat vocalos-v03/patch.b64.00 vocalos-v03/patch.b64.01 | base64 -d > /tmp/v03.patch.gz
+          echo "28b5a7c893ca3d98d0d245b906ed91a15b571ef147e31f53b7ffae704506a73f  /tmp/v03.patch.gz" | sha256sum -c -
+          gunzip -c /tmp/v03.patch.gz > /tmp/v03.patch
+          echo "71fa0c8488d4aa398abc739f1e909d8ce172f63b32a09c4fb01ba0d37cded9c0  /tmp/v03.patch" | sha256sum -c -
+          patch vocalos-public-alpha-v02/app/src/main/assets/index.html < /tmp/v03.patch
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('vocalos-public-alpha-v02/app/build.gradle')
+          s=p.read_text()
+          s=s.replace('versionCode 2','versionCode 3').replace("versionName '1.0.0-alpha02'","versionName '1.0.0-alpha03'")
+          p.write_text(s)
+          PY
+          echo "d7ff62dfb2da659ff926850b7f3302478561f52c274af91177e7589f7663e0d8  vocalos-public-alpha-v02/app/src/main/assets/index.html" | sha256sum -c -
+          grep -q "versionName '1.0.0-alpha03'" vocalos-public-alpha-v02/app/build.gradle
+          grep -q "calibrationVersion=2" vocalos-public-alpha-v02/app/src/main/assets/index.html
+          grep -q "openCalibration(true)" vocalos-public-alpha-v02/app/src/main/assets/index.html
+          grep -q "rangeCalibrated=false" vocalos-public-alpha-v02/app/src/main/assets/index.html
+          ! grep -q "comfortLow:48,comfortHigh:72,rangeCalibrated:true" vocalos-public-alpha-v02/app/src/main/assets/index.html
+
+      - name: Static UI QA
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from xml.etree import ElementTree as ET
+          import re, subprocess, tempfile
+          root=Path('vocalos-public-alpha-v02')
+          for p in root.rglob('*.xml'): ET.parse(p)
+          html=(root/'app/src/main/assets/index.html').read_text(encoding='utf-8')
+          scripts=re.findall(r'<script[^>]*>(.*?)</script>',html,re.S|re.I)
+          for i,s in enumerate(scripts):
+              f=Path(tempfile.gettempdir())/f'vocalos-v03-{i}.js'; f.write_text(s)
+              subprocess.run(['node','--check',str(f)],check=True)
+          ids=re.findall(r'\bid=["\']([^"\']+)["\']',html)
+          assert len(ids)==len(set(ids)), 'duplicate DOM ids'
+          for required in ['calibrationOverlay','calibCanvas','trainerCanvas','trainerConfig']:
+              assert required in ids, required
+          print('UI QA OK',len(ids),'unique ids')
+          PY
+
+      - name: Build API 36 APK and AAB
+        run: gradle -p vocalos-public-alpha-v02 :app:assembleDebug :app:bundleDebug --stacktrace
+
+      - name: Artifact smoke checks
+        run: |
+          APK=vocalos-public-alpha-v02/app/build/outputs/apk/debug/app-debug.apk
+          AAB=vocalos-public-alpha-v02/app/build/outputs/bundle/debug/app-debug.aab
+          unzip -t "$APK" >/dev/null
+          unzip -t "$AAB" >/dev/null
+          unzip -l "$APK" | grep -q AndroidManifest.xml
+          unzip -l "$APK" | grep -q classes.dex
+          unzip -l "$AAB" | grep -q 'base/manifest/AndroidManifest.xml'
+          unzip -l "$AAB" | grep -q 'base/dex/classes.dex'
+          sha256sum "$APK" "$AAB"
+
+      - name: Upload 0.3 APK and AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: Vocal-OS-public-alpha-0.3
+          path: |
+            vocalos-public-alpha-v02/app/build/outputs/apk/debug/app-debug.apk
+            vocalos-public-alpha-v02/app/build/outputs/bundle/debug/app-debug.aab
