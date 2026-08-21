@@ -17,10 +17,17 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
-      - name: Verify source
+      - name: Verify and restore source
         run: |
-          echo "07be5af7e57a9b327f0ff811babf56b86f54ec4763ac887a4034d7767f09af47  Vocal-OS-public-alpha-source.tar.gz" | sha256sum -c -
-          tar -xzf Vocal-OS-public-alpha-source.tar.gz
+          echo "56c3861f8502f0d200465ff478609c1f01ff9fec9aaf9d0e9d421335fa8eac92  vocalos-public-alpha-parts/part-00" | sha256sum -c -
+          echo "e2d61ac93a654b97f0364133666f2412720975d6af58257ab12f6eb78466e8d1  vocalos-public-alpha-parts/part-01" | sha256sum -c -
+          echo "3e785e6b4b95812316cf38ff48f4c1cd75ee494284b78f46237f9c25b6a88d9c  vocalos-public-alpha-parts/part-02" | sha256sum -c -
+          echo "a401272013fc5af84380735bf28833d0977b5a747df21283860bb08bbec825f9  vocalos-public-alpha-parts/part-03" | sha256sum -c -
+          echo "715cf29b56c3a4a0def77c3a4eb4939149a02e30a27e126f85749717a1d1edc7  vocalos-public-alpha-parts/part-04" | sha256sum -c -
+          echo "5f1eef3d07186172049164784100615d4d35dd7b864ab9d71aeba2cc0e6c2104  vocalos-public-alpha-parts/part-05" | sha256sum -c -
+          cat vocalos-public-alpha-parts/part-* > /tmp/Vocal-OS-public-alpha-source.tar.gz
+          echo "07be5af7e57a9b327f0ff811babf56b86f54ec4763ac887a4034d7767f09af47  /tmp/Vocal-OS-public-alpha-source.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/Vocal-OS-public-alpha-source.tar.gz
           test "$(grep -RIl 'ARKA\|com.arka' vocalos-public-alpha | wc -l)" = "0"
       - name: Build API 36 APK and App Bundle
         run: |
