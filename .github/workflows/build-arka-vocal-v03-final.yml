@@ -19,8 +19,16 @@ jobs:
           gradle-version: '8.7'
       - name: Verify and restore source
         run: |
-          echo "18162cd247a59262b50ba33b1dd9aa26436a3019a59391ba93b2de7f38924f8c  ARKA-Vocal-v0.3-source.tar.gz" | sha256sum -c -
-          tar -xzf ARKA-Vocal-v0.3-source.tar.gz
+          echo "403f55c4cca5613d638e4c00e1579f8444e8d71412677ad242711c98dcf76867  arka-vocal-v03-bin/bin-00" | sha256sum -c -
+          echo "9d73b4ad1c3c4f81cfff4608892aaedc484d906440c7ca440dd136aadc69e179  arka-vocal-v03-bin/bin-01" | sha256sum -c -
+          echo "fda0b45012f70ed00a748496ee15da1ed7cb3f95845b0b351bf51d796fdbad39  arka-vocal-v03-bin/bin-02" | sha256sum -c -
+          echo "f564b091034cae0f51b2411eafdcf8b4a90c13adb3dcc09a8c1cd326d4a0f34c  arka-vocal-v03-bin/bin-03" | sha256sum -c -
+          echo "873c37cf372990e5fc9dc94cf947a108f205d0a641d6f2d8ef078b0ebbdc5757  arka-vocal-v03-bin/bin-04" | sha256sum -c -
+          echo "77f25acfc0de42493256b07fc7ca9667a2255f80ec67625937b628767d016897  arka-vocal-v03-bin/bin-05" | sha256sum -c -
+          cat arka-vocal-v03-bin/bin-* > /tmp/ARKA-Vocal-v0.3-source.tar.gz
+          test "$(wc -c < /tmp/ARKA-Vocal-v0.3-source.tar.gz)" = "28826"
+          echo "18162cd247a59262b50ba33b1dd9aa26436a3019a59391ba93b2de7f38924f8c  /tmp/ARKA-Vocal-v0.3-source.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/ARKA-Vocal-v0.3-source.tar.gz
       - name: Build installable debug APK
         run: gradle -p arka-vocal-app :app:assembleDebug --stacktrace
       - name: Upload APK
