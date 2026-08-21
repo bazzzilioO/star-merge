@@ -1,0 +1,34 @@
+name: Build Vocal OS Public Alpha
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    if: github.head_ref == 'vocalos-public-alpha'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Verify source
+        run: |
+          echo "07be5af7e57a9b327f0ff811babf56b86f54ec4763ac887a4034d7767f09af47  Vocal-OS-public-alpha-source.tar.gz" | sha256sum -c -
+          tar -xzf Vocal-OS-public-alpha-source.tar.gz
+          test "$(grep -RIl 'ARKA\|com.arka' vocalos-public-alpha | wc -l)" = "0"
+      - name: Build API 36 APK and App Bundle
+        run: |
+          gradle -p vocalos-public-alpha :app:assembleDebug :app:bundleDebug --stacktrace
+      - name: Upload APK and AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: Vocal-OS-public-alpha
+          path: |
+            vocalos-public-alpha/app/build/outputs/apk/debug/app-debug.apk
+            vocalos-public-alpha/app/build/outputs/bundle/debug/app-debug.aab
