@@ -68,7 +68,11 @@ jobs:
           assert len(ids)==len(set(ids)), 'duplicate DOM ids'
           for expected in ['placementOverlay','trainerCanvas','settingsModal','accuracyChoices']:
               assert expected in ids, expected
-          assert html.count('data-ex-start=') == 54, html.count('data-ex-start=')
+          start=html.index('const EX=[')
+          end=html.index('];', start)
+          assert html[start:end].count('{cat:') == 54, html[start:end].count('{cat:')
+          assert 'function startExercise(i)' in html
+          assert 'onclick="startExercise(${i})"' in html
           assert '3 устойчивых результата' in html
           assert '2 слабых результата' in html
           print('Static UI QA OK:', len(scripts), 'scripts,', len(ids), 'unique ids, 54 executable exercises')
