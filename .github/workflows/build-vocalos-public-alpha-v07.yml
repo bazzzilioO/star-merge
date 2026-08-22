@@ -62,7 +62,7 @@ jobs:
           assert len(ids)==len(set(ids)), 'duplicate DOM ids'
           for expected in ['coach-songs','coach-anatomy','trainerCountIn','trainerGate','trainerLatency','midiFile','midiTrack','midiSpeed','gameCountdown','gameTargetLabel']:
               assert expected in ids, expected
-          for marker in ['parseMidi07','openMidiTrainer','fitMidiToVoice','handleAndroidBack','Vox Invaders','Note Runner','Volume Flight','inputLatencyMs','playMetroClick','DEMO_SONGS']:
+          for marker in ['parseMidi07','openMidiTrainer','fitMidiToVoice','handleAndroidBack','Vox Invaders','Note Runner','Volume Flight','inputLatencyMs','playMetroClick','DEMO07']:
               assert marker in html, marker
           java=(root/'app/src/main/java/com/vocalos/trainer/MainActivity.java').read_text(encoding='utf-8')
           assert java.count('public void onBackPressed()') == 1
