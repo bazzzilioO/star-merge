@@ -28,8 +28,7 @@ jobs:
 
       - name: Apply and verify 0.5 adaptive core
         run: |
-          cat v05-index-b64/0 v05-index-b64/1 v05-index-b64/2 v05-index-b64/3 | tr -d '\n\r' | base64 --decode > /tmp/index.html.gz
-          echo "f13f31f5163eb4ce5fff6915c26aefb24e6d3426900acd505f2d60126a6d5b9e  /tmp/index.html.gz" | sha256sum -c -
+          cat v05-index-b64/0a v05-index-b64/0b v05-index-b64/0c v05-index-b64/0d v05-index-b64/1 v05-index-b64/2 v05-index-b64/3 | tr -d '\n\r' | base64 --decode > /tmp/index.html.gz
           gunzip -c /tmp/index.html.gz > vocalos-public-alpha-v04/app/src/main/assets/index.html
           echo "8b0151a5dd60f308f980a8aff6b740d897fed0ec1a537724fa92461b13983865  vocalos-public-alpha-v04/app/src/main/assets/index.html" | sha256sum -c -
           sed -i "s/versionCode 4/versionCode 5/" vocalos-public-alpha-v04/app/build.gradle
