@@ -73,8 +73,8 @@ jobs:
           assert html[start:end].count('{cat:') == 54, html[start:end].count('{cat:')
           assert 'function startExercise(i)' in html
           assert 'onclick="startExercise(${i})"' in html
-          assert '3 устойчивых результата' in html
-          assert '2 слабых результата' in html
+          assert 'st.good>=3' in html and 'st.bad>=2' in html
+          assert 'паттерн упрощён' in html and '−5 BPM для закрепления' in html
           print('Static UI QA OK:', len(scripts), 'scripts,', len(ids), 'unique ids, 54 executable exercises')
           PY
 
