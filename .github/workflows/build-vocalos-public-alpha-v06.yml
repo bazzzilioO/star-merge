@@ -1,0 +1,93 @@
+name: Build Vocal OS Public Alpha 0.6
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    if: github.head_ref == 'vocalos-public-alpha-v06-build'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Reconstruct and verify 0.6 source
+        run: |
+          cat v06src/00 v06src/01 v06src/02 v06src/03 v06src/04 v06src/05 v06src/06 v06src/07 v06src/08 v06src/09 v06src/10 v06src/11a v06src/11b v06src/12a v06src/12b v06src/13a v06src/13b v06src/14a v06src/14b v06src/15a v06src/15b v06src/16 > Vocal-OS-public-alpha-0.6-source.tar.gz
+          echo "b4d382f1658fba80d99eb47b37c5e5d4b21c7ec6304acab7b261bd6466892793  Vocal-OS-public-alpha-0.6-source.tar.gz" | sha256sum -c -
+          tar -xzf Vocal-OS-public-alpha-0.6-source.tar.gz
+          ROOT=vocalos-v06
+          grep -q "compileSdk 36" "$ROOT/app/build.gradle"
+          grep -q "targetSdk 36" "$ROOT/app/build.gradle"
+          grep -q "versionCode 6" "$ROOT/app/build.gradle"
+          grep -q "0.6-public-alpha" "$ROOT/app/build.gradle"
+          grep -q "SAMPLE_RATE = 48000" "$ROOT/app/src/main/java/com/vocalos/trainer/MainActivity.java"
+          grep -q "HOP_SIZE" "$ROOT/app/src/main/java/com/vocalos/trainer/MainActivity.java"
+          grep -q "onPitchSilence" "$ROOT/app/src/main/java/com/vocalos/trainer/MainActivity.java"
+          grep -q "calibrationVersion!==5" "$ROOT/app/src/main/assets/index.html"
+          grep -q "function visualMidi" "$ROOT/app/src/main/assets/index.html"
+          grep -q "motionMode" "$ROOT/app/src/main/assets/index.html"
+          grep -q "ghostPitch" "$ROOT/app/src/main/assets/index.html"
+          grep -q "const WARMUPS" "$ROOT/app/src/main/assets/index.html"
+          test "$(grep -RIl 'ARKA\\|com.arka' "$ROOT" | wc -l)" = "0"
+
+      - name: Static UI and code QA
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from xml.etree import ElementTree as ET
+          import re, subprocess, tempfile
+          root=Path('vocalos-v06')
+          for p in root.rglob('*.xml'):
+              ET.parse(p)
+          html=(root/'app/src/main/assets/index.html').read_text(encoding='utf-8')
+          scripts=re.findall(r'<script[^>]*>(.*?)</script>', html, re.S|re.I)
+          assert scripts
+          for i,s in enumerate(scripts):
+              f=Path(tempfile.gettempdir())/f'vocalos06-{i}.js'
+              f.write_text(s, encoding='utf-8')
+              subprocess.run(['node','--check',str(f)], check=True)
+          ids=re.findall(r'\bid=["\']([^"\']+)["\']', html)
+          assert len(ids)==len(set(ids)), 'duplicate DOM ids'
+          m=re.search(r'const WARMUPS=\[(.*?)\];',html,re.S)
+          assert m and m.group(1).count('{') == 9, 'expected 9 warm-up techniques'
+          for marker in ['pitchViz','visualMidi','onPitchSilence','motionMode','ghostPitch','Voice Check']:
+              assert marker in html, marker
+          java=(root/'app/src/main/java/com/vocalos/trainer/MainActivity.java').read_text(encoding='utf-8')
+          assert 'SAMPLE_RATE = 48000' in java
+          assert 'HOP_SIZE' in java
+          assert 'ANALYSIS_RATE' in java
+          print('0.6 QA OK:',len(ids),'ids,',m.group(1).count('{'),'warm-ups')
+          PY
+
+      - name: Build API 36 APK and AAB
+        run: gradle -p vocalos-v06 :app:assembleDebug :app:bundleDebug --stacktrace
+
+      - name: Artifact smoke checks
+        run: |
+          APK=vocalos-v06/app/build/outputs/apk/debug/app-debug.apk
+          AAB=vocalos-v06/app/build/outputs/bundle/debug/app-debug.aab
+          unzip -t "$APK" >/dev/null
+          unzip -t "$AAB" >/dev/null
+          unzip -l "$APK" | grep -q AndroidManifest.xml
+          unzip -l "$APK" | grep -q classes.dex
+          unzip -l "$AAB" | grep -q 'base/manifest/AndroidManifest.xml'
+          unzip -l "$AAB" | grep -q 'base/dex/classes.dex'
+          sha256sum "$APK" "$AAB"
+
+      - name: Upload 0.6 APK and AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: Vocal-OS-public-alpha-0.6
+          path: |
+            vocalos-v06/app/build/outputs/apk/debug/app-debug.apk
+            vocalos-v06/app/build/outputs/bundle/debug/app-debug.aab
