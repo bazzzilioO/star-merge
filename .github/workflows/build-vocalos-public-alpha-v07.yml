@@ -1,0 +1,96 @@
+name: Build Vocal OS Public Alpha 0.7
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    if: github.head_ref == 'vocalos-public-alpha-v07-build'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Restore verified 0.6 base
+        run: |
+          cat v06src/00 v06src/01 v06src/02 v06src/03 v06src/04 v06src/05 v06src/06 v06src/07 v06src/08 v06src/09 v06src/10 v06src/11a v06src/11b v06src/12a v06src/12b v06src/13a v06src/13b v06src/14a v06src/14b v06src/15a v06src/15b v06src/16 > Vocal-OS-public-alpha-0.6-source.tar.gz
+          echo "b4d382f1658fba80d99eb47b37c5e5d4b21c7ec6304acab7b261bd6466892793  Vocal-OS-public-alpha-0.6-source.tar.gz" | sha256sum -c -
+          tar -xzf Vocal-OS-public-alpha-0.6-source.tar.gz
+
+      - name: Apply and verify 0.7 patch
+        run: |
+          cat v07patch/part-00 v07patch/part-01 v07patch/part-02 v07patch/part-03 v07patch/part-04 v07patch/part-05 v07patch/part-06 > /tmp/v07.patch.gz
+          echo "620dadcf0c2d3d8c80bfa8ffc728adfc33348f5b9aa4d19ceaccef15e5ec3d43  /tmp/v07.patch.gz" | sha256sum -c -
+          gunzip -c /tmp/v07.patch.gz > /tmp/v07.patch
+          echo "395db493d0699f403b67ae443b24c3e50ae93a41219a0cb0cf8cb00492a32b53  /tmp/v07.patch" | sha256sum -c -
+          cd vocalos-v06
+          patch -p2 < /tmp/v07.patch
+          echo "949cb2136dc98132cb3683c76dc818f69e4746de6f39778a2ce39beb3ca8a82c  app/src/main/assets/index.html" | sha256sum -c -
+          echo "e62a97e932e5c139129adceaa0fef21f1f6a8cc28caeb909d8346416412d3222  app/src/main/java/com/vocalos/trainer/MainActivity.java" | sha256sum -c -
+          echo "db27c08726ca3b57dfc009eb4abfdef2c577d97572ac871f606cdee55a19770f  app/build.gradle" | sha256sum -c -
+          grep -q "versionCode 7" app/build.gradle
+          grep -q "0.7-public-alpha" app/build.gradle
+          grep -q "targetSdk 36" app/build.gradle
+          test "$(grep -RIl 'ARKA\\|com.arka' . | wc -l)" = "0"
+
+      - name: Static UI and native QA
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from xml.etree import ElementTree as ET
+          import re, subprocess, tempfile
+          root=Path('vocalos-v06')
+          for p in root.rglob('*.xml'):
+              ET.parse(p)
+          html=(root/'app/src/main/assets/index.html').read_text(encoding='utf-8')
+          scripts=re.findall(r'<script[^>]*>(.*?)</script>', html, re.S|re.I)
+          assert scripts
+          for i,s in enumerate(scripts):
+              f=Path(tempfile.gettempdir())/f'vocalos07-{i}.js'
+              f.write_text(s, encoding='utf-8')
+              subprocess.run(['node','--check',str(f)], check=True)
+          ids=re.findall(r'\bid=["\']([^"\']+)["\']', html)
+          assert len(ids)==len(set(ids)), 'duplicate DOM ids'
+          for expected in ['coach-songs','coach-anatomy','trainerCountIn','trainerGate','trainerLatency','midiFile','midiTrack','midiSpeed','gameCountdown','gameTargetLabel']:
+              assert expected in ids, expected
+          for marker in ['parseMidi07','openMidiTrainer','fitMidiToVoice','handleAndroidBack','Vox Invaders','Note Runner','Volume Flight','inputLatencyMs','playMetroClick','DEMO_SONGS']:
+              assert marker in html, marker
+          java=(root/'app/src/main/java/com/vocalos/trainer/MainActivity.java').read_text(encoding='utf-8')
+          assert java.count('public void onBackPressed()') == 1
+          assert 'MainActivity.super.onBackPressed()' not in java
+          for marker in ['onShowFileChooser','ACTION_OPEN_DOCUMENT','exitFromBack','TONE_RATE = 48000','ValueCallback<Uri[]>']:
+              assert marker in java, marker
+          print('0.7 QA OK:',len(ids),'unique ids; MIDI, timing, games, anatomy, Back/file-picker present')
+          PY
+
+      - name: Build API 36 APK and AAB
+        run: gradle -p vocalos-v06 :app:assembleDebug :app:bundleDebug --stacktrace
+
+      - name: Artifact smoke checks
+        run: |
+          APK=vocalos-v06/app/build/outputs/apk/debug/app-debug.apk
+          AAB=vocalos-v06/app/build/outputs/bundle/debug/app-debug.aab
+          unzip -t "$APK" >/dev/null
+          unzip -t "$AAB" >/dev/null
+          unzip -l "$APK" | grep -q AndroidManifest.xml
+          unzip -l "$APK" | grep -q classes.dex
+          unzip -l "$AAB" | grep -q 'base/manifest/AndroidManifest.xml'
+          unzip -l "$AAB" | grep -q 'base/dex/classes.dex'
+          sha256sum "$APK" "$AAB"
+
+      - name: Upload 0.7 APK and AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: Vocal-OS-public-alpha-0.7
+          path: |
+            vocalos-v06/app/build/outputs/apk/debug/app-debug.apk
+            vocalos-v06/app/build/outputs/bundle/debug/app-debug.aab
