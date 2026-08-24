@@ -1,0 +1,119 @@
+name: Build Vocal OS Public Alpha 0.10
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    if: github.head_ref == 'vocalos-public-alpha-v010-build'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Restore verified 0.9 source
+        run: |
+          cat v06src/00 v06src/01 v06src/02 v06src/03 v06src/04 v06src/05 v06src/06 v06src/07 v06src/08 v06src/09 v06src/10 v06src/11a v06src/11b v06src/12a v06src/12b v06src/13a v06src/13b v06src/14a v06src/14b v06src/15a v06src/15b v06src/16 > /tmp/v06.tar.gz
+          echo "b4d382f1658fba80d99eb47b37c5e5d4b21c7ec6304acab7b261bd6466892793  /tmp/v06.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/v06.tar.gz
+          cat v07patch/part-00 v07patch/part-01 v07patch/part-02 v07patch/part-03 v07patch/part-04 v07patch/part-05 v07patch/part-06 > /tmp/v07.patch.gz
+          echo "620dadcf0c2d3d8c80bfa8ffc728adfc33348f5b9aa4d19ceaccef15e5ec3d43  /tmp/v07.patch.gz" | sha256sum -c -
+          gunzip -c /tmp/v07.patch.gz > /tmp/v07.patch
+          cd vocalos-v06 && patch -p2 < /tmp/v07.patch && cd ..
+          cat v08patch/part-00 v08patch/part-01 > /tmp/v08.patch.gz
+          echo "ba1b5f62d8d2bdf234e520f26098cd8d1d4952f46399eddece7ddddbfae76836  /tmp/v08.patch.gz" | sha256sum -c -
+          gunzip -c /tmp/v08.patch.gz > /tmp/v08.patch
+          cd vocalos-v06 && patch -p2 < /tmp/v08.patch && cd ..
+          cat v09patch/part-00 v09patch/part-01 > /tmp/v09.patch.gz
+          echo "dcef1504d501ccdfb2c6787b3d43eab80f4c86171ce01d488e8ce984649d88a8  /tmp/v09.patch.gz" | sha256sum -c -
+          gunzip -c /tmp/v09.patch.gz > /tmp/v09.patch
+          cd vocalos-v06
+          patch -p1 < /tmp/v09.patch
+          cp ../v09sign/vocalos-alpha-dev.jks app/vocalos-alpha-dev.jks
+          echo "8721d31b8bb3ce9b8ea9674e57c9a4b3d7b5f35d63adcd24db52327975cfc479  app/build.gradle" | sha256sum -c -
+          echo "412d377b30cfcdd426ae8bea388f9a9c9019fa66cd78f8df88505f45ca8bdd3e  app/src/main/java/com/vocalos/trainer/MainActivity.java" | sha256sum -c -
+          echo "5c83080d8fa8e0e3d4b5722894fed1f9be88ef30231f40c2bb8c38f97b5c31a4  app/src/main/assets/index.html" | sha256sum -c -
+          echo "87a081bf085c98776d18554ada0ff38b485e1568efaf91fca18a8f8171b80532  app/vocalos-alpha-dev.jks" | sha256sum -c -
+          cd ..
+
+      - name: Apply and verify Engine v2 rewrite
+        run: |
+          cat v10patch/part-00 v10patch/part-01 v10patch/part-02 v10patch/part-03 v10patch/part-04 v10patch/part-05 v10patch/part-06 > /tmp/v010.patch.gz
+          echo "b26212c5aa17f225038297907247f3decd16ad42cf9b699ad55e0d984a824f96  /tmp/v010.patch.gz" | sha256sum -c -
+          gunzip -c /tmp/v010.patch.gz > /tmp/v010.patch
+          echo "ec03a4419ac9cbbe165101f8be23e77fabe796f5d55d0d626923252fbfb4edc1  /tmp/v010.patch" | sha256sum -c -
+          cd vocalos-v06
+          patch --batch -p5 < /tmp/v010.patch
+          echo "5c46276c985881be0ef1035386f16c07b5f94552acde5796be38b9f0775375ce  app/src/main/assets/index.html" | sha256sum -c -
+          echo "8fc3233b1562a510f804880a2ae34cd332cf3e15ddf1866bf3ae6ad75d08bade  app/src/main/assets/engine-v2.js" | sha256sum -c -
+          echo "ab3e394513795808422cdd3128329857c009dd49e05f32149f55f6b103337331  app/src/main/assets/arcade-v2.js" | sha256sum -c -
+          echo "ae1f718106a3197e1ec099d18f143c76cb89dc9557e637b27c942d32cde60293  app/src/main/java/com/vocalos/trainer/MainActivity.java" | sha256sum -c -
+          echo "b81b6dbcc82a1c4271c34ab481fb7718ec5f681531623b7d50c9f3d51932ff4a  app/build.gradle" | sha256sum -c -
+          echo "87a081bf085c98776d18554ada0ff38b485e1568efaf91fca18a8f8171b80532  app/vocalos-alpha-dev.jks" | sha256sum -c -
+          grep -q "versionCode 10" app/build.gradle
+          grep -q "0.10-public-alpha" app/build.gradle
+          grep -q "targetSdk 36" app/build.gradle
+
+      - name: Static runtime and engine QA
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from xml.etree import ElementTree as ET
+          import re, subprocess, tempfile
+          root=Path('vocalos-v06')
+          for p in root.rglob('*.xml'): ET.parse(p)
+          html=(root/'app/src/main/assets/index.html').read_text(encoding='utf-8')
+          assert html.rstrip().endswith('</html>')
+          assert html.rstrip().rfind('</html>') == len(html.rstrip())-7
+          assert 'VC08' not in html
+          ids=re.findall(r'\bid=["\']([^"\']+)["\']',html)
+          assert len(ids)==len(set(ids)), 'duplicate DOM ids'
+          for i,s in enumerate(re.findall(r'<script[^>]*>(.*?)</script>',html,re.S|re.I)):
+              f=Path(tempfile.gettempdir())/f'vocalos10-inline-{i}.js';f.write_text(s,encoding='utf-8');subprocess.run(['node','--check',str(f)],check=True)
+          for js in ['engine-v2.js','arcade-v2.js']:
+              subprocess.run(['node','--check',str(root/'app/src/main/assets'/js)],check=True)
+          engine=(root/'app/src/main/assets/engine-v2.js').read_text(encoding='utf-8')
+          arcade=(root/'app/src/main/assets/arcade-v2.js').read_text(encoding='utf-8')
+          java=(root/'app/src/main/java/com/vocalos/trainer/MainActivity.java').read_text(encoding='utf-8')
+          for marker in ['ENGINE10','audioClock10','window.onPitchV2','Clean v10 SPA router','trainerElapsed']:
+              assert marker in engine, marker
+          for marker in ['GAME10','gameFrameSec10','LOCKED ✓','dailyQuest10','startAudio']:
+              assert marker in arcade, marker
+          for marker in ['window.onPitchV2','getAudioClockMs','pYIN-lite','PERFORMANCE_MODE_LOW_LATENCY','AudioSource.UNPROCESSED']:
+              assert marker in java, marker
+          print('0.10 QA OK:',len(ids),'unique ids; clean runtime + Engine v2 + sample-clock Arcade v2')
+          PY
+
+      - name: Build API 36 APK and AAB
+        run: gradle -p vocalos-v06 :app:assembleDebug :app:bundleDebug --stacktrace
+
+      - name: Artifact and signing smoke checks
+        run: |
+          APK=vocalos-v06/app/build/outputs/apk/debug/app-debug.apk
+          AAB=vocalos-v06/app/build/outputs/bundle/debug/app-debug.aab
+          unzip -t "$APK" >/dev/null
+          unzip -t "$AAB" >/dev/null
+          unzip -l "$APK" | grep -q AndroidManifest.xml
+          unzip -l "$APK" | grep -q classes.dex
+          unzip -l "$AAB" | grep -q 'base/manifest/AndroidManifest.xml'
+          unzip -l "$AAB" | grep -q 'base/dex/classes.dex'
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)
+          test -x "$APKSIGNER"
+          "$APKSIGNER" verify --verbose --print-certs "$APK" | tee /tmp/apksig.txt
+          grep -qi '351e64f51bacc138c4f61da5167d1e905742f8f0985a6fb9cb6af9f6b344132f' /tmp/apksig.txt
+          sha256sum "$APK" "$AAB"
+
+      - name: Upload 0.10 APK and AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: Vocal-OS-public-alpha-0.10
+          path: |
+            vocalos-v06/app/build/outputs/apk/debug/app-debug.apk
+            vocalos-v06/app/build/outputs/bundle/debug/app-debug.aab
