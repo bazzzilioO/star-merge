@@ -87,7 +87,10 @@ jobs:
           unzip -l "$APK" | grep -q classes.dex
           unzip -l "$AAB" | grep -q 'base/manifest/AndroidManifest.xml'
           unzip -l "$AAB" | grep -q 'base/dex/classes.dex'
-          keytool -printcert -jarfile "$APK" | grep -q 'SHA256:'
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)
+          test -x "$APKSIGNER"
+          "$APKSIGNER" verify --verbose --print-certs "$APK" | tee /tmp/apksig.txt
+          grep -qi '351e64f51bacc138c4f61da5167d1e905742f8f0985a6fb9cb6af9f6b344132f' /tmp/apksig.txt
           sha256sum "$APK" "$AAB"
 
       - name: Upload 0.9 APK and AAB
