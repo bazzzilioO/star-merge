@@ -1,0 +1,99 @@
+name: Build Vocal OS Public Alpha 0.9
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    if: github.head_ref == 'vocalos-public-alpha-v09-build'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Restore verified 0.8 source
+        run: |
+          cat v06src/00 v06src/01 v06src/02 v06src/03 v06src/04 v06src/05 v06src/06 v06src/07 v06src/08 v06src/09 v06src/10 v06src/11a v06src/11b v06src/12a v06src/12b v06src/13a v06src/13b v06src/14a v06src/14b v06src/15a v06src/15b v06src/16 > /tmp/v06.tar.gz
+          echo "b4d382f1658fba80d99eb47b37c5e5d4b21c7ec6304acab7b261bd6466892793  /tmp/v06.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/v06.tar.gz
+          cat v07patch/part-00 v07patch/part-01 v07patch/part-02 v07patch/part-03 v07patch/part-04 v07patch/part-05 v07patch/part-06 > /tmp/v07.patch.gz
+          echo "620dadcf0c2d3d8c80bfa8ffc728adfc33348f5b9aa4d19ceaccef15e5ec3d43  /tmp/v07.patch.gz" | sha256sum -c -
+          gunzip -c /tmp/v07.patch.gz > /tmp/v07.patch
+          cd vocalos-v06 && patch -p2 < /tmp/v07.patch && cd ..
+          cat v08patch/part-00 v08patch/part-01 > /tmp/v08.patch.gz
+          echo "ba1b5f62d8d2bdf234e520f26098cd8d1d4952f46399eddece7ddddbfae76836  /tmp/v08.patch.gz" | sha256sum -c -
+          gunzip -c /tmp/v08.patch.gz > /tmp/v08.patch
+          cd vocalos-v06 && patch -p2 < /tmp/v08.patch && cd ..
+          echo "cb51deeeeafc31a20afdc8e8fc3b70b5172e2d58076a19eab6792a01c3e09dcf  vocalos-v06/app/src/main/assets/index.html" | sha256sum -c -
+          echo "11a72ff73a6d776c7abe55df8b2e690078c3c4a6962c1ec07adba4256734dd51  vocalos-v06/app/src/main/java/com/vocalos/trainer/MainActivity.java" | sha256sum -c -
+
+      - name: Apply and verify 0.9 patch and signing key
+        run: |
+          cat v09patch/part-00 v09patch/part-01 > /tmp/v09.patch.gz
+          echo "dcef1504d501ccdfb2c6787b3d43eab80f4c86171ce01d488e8ce984649d88a8  /tmp/v09.patch.gz" | sha256sum -c -
+          gunzip -c /tmp/v09.patch.gz > /tmp/v09.patch
+          echo "e075441ce2ab38a970d72e090695d83b63558a6c8f3330e9e7f263e661aa5135  /tmp/v09.patch" | sha256sum -c -
+          cd vocalos-v06
+          patch -p1 < /tmp/v09.patch
+          cp ../v09sign/vocalos-alpha-dev.jks app/vocalos-alpha-dev.jks
+          echo "8721d31b8bb3ce9b8ea9674e57c9a4b3d7b5f35d63adcd24db52327975cfc479  app/build.gradle" | sha256sum -c -
+          echo "412d377b30cfcdd426ae8bea388f9a9c9019fa66cd78f8df88505f45ca8bdd3e  app/src/main/java/com/vocalos/trainer/MainActivity.java" | sha256sum -c -
+          echo "5c83080d8fa8e0e3d4b5722894fed1f9be88ef30231f40c2bb8c38f97b5c31a4  app/src/main/assets/index.html" | sha256sum -c -
+          echo "87a081bf085c98776d18554ada0ff38b485e1568efaf91fca18a8f8171b80532  app/vocalos-alpha-dev.jks" | sha256sum -c -
+          grep -q "versionCode 9" app/build.gradle
+          grep -q "0.9-public-alpha" app/build.gradle
+          grep -q "signingConfig signingConfigs.alphaDev" app/build.gradle
+
+      - name: Static UI and native QA
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from xml.etree import ElementTree as ET
+          import re, subprocess, tempfile
+          root=Path('vocalos-v06')
+          for p in root.rglob('*.xml'): ET.parse(p)
+          html=(root/'app/src/main/assets/index.html').read_text(encoding='utf-8')
+          scripts=re.findall(r'<script[^>]*>(.*?)</script>', html, re.S|re.I)
+          for i,s in enumerate(scripts):
+              f=Path(tempfile.gettempdir())/f'vocalos09-{i}.js'; f.write_text(s,encoding='utf-8'); subprocess.run(['node','--check',str(f)],check=True)
+          ids=re.findall(r'\bid=["\']([^"\']+)["\']',html); assert len(ids)==len(set(ids))
+          for marker in ['VC09','fill+3s-hold','vc09ProcessRangeHold','currentActiveView09','v09-hit','ТОЧНО ✓','calibrationVersion=7']:
+              assert marker in html, marker
+          java=(root/'app/src/main/java/com/vocalos/trainer/MainActivity.java').read_text(encoding='utf-8')
+          assert java.count('public void onBackPressed()') == 1
+          for marker in ['rootBackGuard','moveTaskToBack(true)','Toast.makeText']:
+              assert marker in java, marker
+          print('0.9 QA OK:',len(ids),'unique ids; fill-based Voice Check + hit feedback + robust Back')
+          PY
+          keytool -list -keystore vocalos-v06/app/vocalos-alpha-dev.jks -storepass vocalos-alpha-2026 | grep -q 'vocalos-alpha'
+
+      - name: Build API 36 APK and AAB
+        run: gradle -p vocalos-v06 :app:assembleDebug :app:bundleDebug --stacktrace
+
+      - name: Artifact and signing smoke checks
+        run: |
+          APK=vocalos-v06/app/build/outputs/apk/debug/app-debug.apk
+          AAB=vocalos-v06/app/build/outputs/bundle/debug/app-debug.aab
+          unzip -t "$APK" >/dev/null
+          unzip -t "$AAB" >/dev/null
+          unzip -l "$APK" | grep -q AndroidManifest.xml
+          unzip -l "$APK" | grep -q classes.dex
+          unzip -l "$AAB" | grep -q 'base/manifest/AndroidManifest.xml'
+          unzip -l "$AAB" | grep -q 'base/dex/classes.dex'
+          keytool -printcert -jarfile "$APK" | grep -q 'SHA256:'
+          sha256sum "$APK" "$AAB"
+
+      - name: Upload 0.9 APK and AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: Vocal-OS-public-alpha-0.9
+          path: |
+            vocalos-v06/app/build/outputs/apk/debug/app-debug.apk
+            vocalos-v06/app/build/outputs/bundle/debug/app-debug.aab
