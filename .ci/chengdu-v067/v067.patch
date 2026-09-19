@@ -1,0 +1,95 @@
+diff -ruN a/app/build.gradle.kts b/app/build.gradle.kts
+--- a/app/build.gradle.kts	2026-09-19 15:25:02.425348499 +0000
++++ b/app/build.gradle.kts	2026-09-19 15:25:02.428363203 +0000
+@@ -8,8 +8,8 @@
+         applicationId = "com.gera.chengdu"
+         minSdk = 26
+         targetSdk = 35
+-        versionCode = 20
+-        versionName = "0.6.6"
++        versionCode = 21
++        versionName = "0.6.7"
+     }
+ 
+     buildTypes {
+diff -ruN a/app/src/main/assets/app.js b/app/src/main/assets/app.js
+--- a/app/src/main/assets/app.js	2026-09-19 15:25:02.423220229 +0000
++++ b/app/src/main/assets/app.js	2026-09-19 15:25:02.427412874 +0000
+@@ -3,7 +3,7 @@
+ const D = window.TRIP_DATA || { meta: {}, days: [], tickets: [], checklist: [] };
+ const GUIDE = Array.isArray(window.GUIDE_DATA) ? window.GUIDE_DATA : [];
+ const BASE_PHRASES = Array.isArray(window.PHRASE_DATA) ? window.PHRASE_DATA : [];
+-const APP_VERSION = '0.6.6';
++const APP_VERSION = '0.6.7';
+ const STORAGE_KEY = 'chengdu-v4-state';
+ const LEGACY_KEYS = ['chengdu-v3-state', 'chengdu-v2-state', 'chengdu-state'];
+ 
+diff -ruN a/app/src/main/assets/v060.js b/app/src/main/assets/v060.js
+--- a/app/src/main/assets/v060.js	2026-09-19 15:25:02.422246124 +0000
++++ b/app/src/main/assets/v060.js	2026-09-19 15:25:02.426297336 +0000
+@@ -729,13 +729,60 @@
+ window.v60CurrentContext = v60CurrentContext;
+ window.v60NextFixedRisk = v60NextFixedRisk;
+ 
+-/* Refresh the live state when the WebView returns from background or crosses a minute. */
++/* v0.6.7: refresh live time without rebuilding the whole WebView.
++   A full render every minute used to reset unsaved editor DOM and caused a
++   visible blink. Keep route/user data untouched and update only live widgets. */
++function v60SoftLiveRefresh() {
++  if (document.hidden || !['today', 'day', 'now'].includes(ui.view)) return;
++  store.runtime.lastNowUpdate = nowIso();
++
++  const parts = v60TripParts();
++  document.querySelectorAll('.v60-trip-clock b, .v61-prep-dashboard.live header b').forEach(node => {
++    node.textContent = parts.time;
++  });
++
++  const row = v60CurrentContext();
++  const previousId = ui.v67CurrentContextId || null;
++  ui.v67CurrentContextId = row?.id || null;
++
++  /* On the dedicated Now screen a boundary can change the whole action set.
++     Rebuild only once when the active event really changes, never every minute,
++     and never while a modal/editor is open. */
++  if (ui.view === 'now' && row?.id && previousId && previousId !== row.id && !ui.modal && !document.querySelector('.modal-backdrop')) {
++    applyTheme();
++    try {
++      $('#app').innerHTML = v60NowView();
++      v4AfterRender();
++    } catch (error) { $('#app').innerHTML = errorView(error); }
++    return;
++  }
++
++  if (row) {
++    const info = v60StatusInfo(row);
++    const liveStatus = document.querySelector('.v60-live-status');
++    if (liveStatus) {
++      const title = liveStatus.querySelector('b');
++      const detail = liveStatus.querySelector('small');
++      if (title) title.textContent = info.label;
++      if (detail) detail.textContent = info.detail;
++    }
++    const homeCurrent = document.querySelector('.v61-prep-dashboard.live .v61-prep-summary b');
++    if (homeCurrent) homeCurrent.textContent = row.event?.title || 'Выбрать текущий пункт';
++  }
++
++  if (ui.view === 'day') {
++    const currentId = row?.id || null;
++    document.querySelectorAll('.v60-event').forEach(card => {
++      card.classList.toggle('v60-current', Boolean(currentId) && card.id === `ev-${currentId}`);
++    });
++  }
++}
++window.v60SoftLiveRefresh = v60SoftLiveRefresh;
++
+ document.addEventListener('visibilitychange', () => {
+-  if (!document.hidden) { store.runtime.lastNowUpdate = nowIso(); save(); render(); }
++  if (!document.hidden) v60SoftLiveRefresh();
+ });
+-setInterval(() => {
+-  if (!document.hidden && ['today', 'day', 'now'].includes(ui.view)) { store.runtime.lastNowUpdate = nowIso(); render(); }
+-}, 60000);
++setInterval(v60SoftLiveRefresh, 60000);
+ 
+ 
+ /* v0.6.1 UX polish: calm home, free-time gaps, collapsed details,
