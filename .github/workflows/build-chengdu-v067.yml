@@ -23,6 +23,7 @@ jobs:
       - name: Restore verified v0.6.6 source
         run: |
           git fetch origin 130471915fa364cf419ef24ac5f9fbc19694db23 --depth=1
+          git checkout 130471915fa364cf419ef24ac5f9fbc19694db23 -- .ci/chengdu-v066
           git show 130471915fa364cf419ef24ac5f9fbc19694db23:.github/workflows/build-chengdu-v066.yml > /tmp/v066.yml
           ruby -ryaml -e '
             doc = YAML.load_file("/tmp/v066.yml")
