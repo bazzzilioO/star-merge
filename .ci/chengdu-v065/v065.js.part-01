@@ -1,0 +1,170 @@
+ = function() {
+  v65EnsureDayChecklists();
+  const system = store.itinerary.map(day => v65SystemChecklistFor(day.date)).filter(Boolean);
+  const custom = store.checklists.filter(group => !group.systemDay && !String(group.id).startsWith('system-day-'));
+  return shell(`<section class="page-title"><div><div class="eyebrow">Дополняется и синхронизируется</div><h1>Чек-листы</h1><p>Общие разделы остаются как раньше. Ниже — отдельный системный чек-лист на каждый день поездки.</p></div><button class="primary-btn touch-target" onclick="showChecklistEditor('group')">+ Раздел</button></section>${section('По дням поездки', 'системные')}${system.map(v65SystemChecklistGroup).join('')}${section('Остальные разделы', `${custom.length}`)}${custom.map(V65_BASE_CHECKLIST_GROUP).join('')}`);
+};
+window.v4ChecklistsView = v4ChecklistsView;
+
+const V65_BASE_DELETE_CHECKLIST = v4DeleteChecklistGroup;
+v4DeleteChecklistGroup = function(groupId) {
+  if (String(groupId).startsWith('system-day-')) return toast('Системный раздел дня удалить нельзя');
+  return V65_BASE_DELETE_CHECKLIST(groupId);
+};
+window.v4DeleteChecklistGroup = v4DeleteChecklistGroup;
+
+/* Settings: no separate tickets/reservations owner and no Now entry point. */
+const V65_BASE_MORE = moreView;
+moreView = function() {
+  const html = V65_BASE_MORE();
+  const root = document.createElement('div');
+  root.innerHTML = html;
+  root.querySelectorAll('.spoiler').forEach(node => {
+    if (node.querySelector('.spoiler-head b')?.textContent.trim() === 'Билеты и брони') node.remove();
+  });
+  root.querySelectorAll('.more-grid button').forEach(node => {
+    if (node.querySelector('b')?.textContent.trim() === 'Сейчас') node.remove();
+  });
+  const version = root.querySelector('.version');
+  if (version) version.textContent = `Чэнду 2026 · v${V65_RELEASE} · schema ${store.schemaVersion} · offline-first`;
+  return root.innerHTML;
+};
+v4MoreView = moreView;
+window.moreView = moreView;
+
+/* Event-local checklist + linked notes + one phrases entry point. */
+function v65DefaultPointChecklist(event) {
+  const pack = typeof v58Pack === 'function' ? v58Pack(event) : null;
+  const values = [...(pack?.quick || []), ...(pack?.need || [])].map(String).filter(Boolean);
+  return [...new Set(values)].slice(0,8).map((text,index) => ({ id:`auto-${index}`, text, done:false }));
+}
+function v65PointChecklist(event) {
+  if (Array.isArray(event?.fieldChecklist)) return event.fieldChecklist.map((item,index) => typeof item === 'string' ? { id:`legacy-${index}`, text:item, done:false } : { id:item.id || `item-${index}`, text:String(item.text || ''), done:Boolean(item.done) }).filter(item => item.text);
+  return v65DefaultPointChecklist(event);
+}
+
+function v65LinkedNotes(event) {
+  const ids = new Set(Array.isArray(event?.relatedNoteIds) ? event.relatedNoteIds : []);
+  return (store.notesCards || []).filter(note => ids.has(note.id));
+}
+
+function v65ContextBlock(event, day) {
+  const found = v58FindEvent(event.id);
+  const dayIndex = found?.dayIndex ?? store.itinerary.indexOf(day);
+  const checklist = v65PointChecklist(event);
+  const notes = v65LinkedNotes(event);
+  return `<div class="context-hub v59-context v65-context"><div class="context-head"><div><b>Пригодится здесь</b><span>чек-лист точки</span></div></div><div class="v65-point-checklist">${checklist.length ? checklist.map((item,index) => `<label class="v65-point-check ${item.done ? 'done' : ''}"><input type="checkbox" ${item.done ? 'checked' : ''} onchange="v65TogglePointCheck(${dayIndex},'${escJs(event.id)}',${index},this.checked)"><span></span><b>${esc(item.text)}</b></label>`).join('') : '<p class="v65-empty">Пока пусто — добавь пункты через «Править».</p>'}</div>${notes.length ? `<section class="v59-context-section is-understand"><header><div><b>Обратить внимание</b><span>${notes.length}</span></div></header><div class="v59-context-section-body">${notes.map(note => `<button class="v59-guide-link" onclick="v65OpenNote('${escJs(note.id)}')"><span>${esc(note.title || 'Без названия')}</span><i>›</i></button>`).join('')}</div></section>` : ''}<button class="v65-all-phrases" onclick="v58OpenPhraseSet('${escJs(event.id)}')">Все фразы этой точки <i>›</i></button></div>`;
+}
+v59ContextBlock = v65ContextBlock;
+v58ContextBlock = v65ContextBlock;
+v5ContextBlock = v65ContextBlock;
+window.v59ContextBlock = v65ContextBlock;
+window.v58ContextBlock = v65ContextBlock;
+
+function v65TogglePointCheck(dayIndex,eventId,index,done) {
+  const event = store.itinerary[dayIndex]?.events?.find(item => item.id === eventId);
+  if (!event) return;
+  const list = v65PointChecklist(event);
+  if (!list[index]) return;
+  list[index].done = done;
+  event.fieldChecklist = list.map((item,i) => ({ id:item.id && !String(item.id).startsWith('auto-') ? item.id : `point-${i}-${event.id}`, text:item.text, done:Boolean(item.done) }));
+  event.updatedAt = nowIso();
+  event.updatedBy = store.sync?.deviceId || 'local';
+  store.routeUpdatedAt = nowIso();
+  save();
+  const label = document.querySelector(`#ev-${CSS.escape(eventId)} .v65-point-checklist`)?.children?.[index];
+  label?.classList.toggle('done', done);
+}
+window.v65TogglePointCheck = v65TogglePointCheck;
+
+/* Point editor gets checklist and note linkage without changing legacy fields. */
+const V65_BASE_POINT_EDITOR_HTML = v4PointEditorHtml;
+v4PointEditorHtml = function(modal) {
+  let html = V65_BASE_POINT_EDITOR_HTML(modal);
+  const event = modal.data || {};
+  const checklistText = v65PointChecklist(event).map(item => item.text).join('\n');
+  const selected = new Set(Array.isArray(event.relatedNoteIds) ? event.relatedNoteIds : []);
+  const notesPicker = (store.notesCards || []).length ? `<div class="v65-note-picker">${store.notesCards.map(note => `<label><input type="checkbox" data-v65-note-id="${esc(note.id)}" ${selected.has(note.id) ? 'checked' : ''}><span>${esc(note.title || 'Без названия')}</span><small>${note.scopeDay ? esc(note.scopeDay) : 'общее'}</small></label>`).join('')}</div>` : '<div class="v65-empty">Заметок пока нет.</div>';
+  const extra = `<label>Чек-лист «Пригодится здесь»<textarea id="f-v65-checklist" placeholder="Один пункт на строку">${esc(checklistText)}</textarea><small class="v65-form-hint">Один пункт на строку. Отметки выполнения сохраняются по совпадающему тексту.</small></label><div class="v65-editor-block"><b>Обратить внимание</b><small>Выбери заметки, которые нужно показывать в этой точке маршрута.</small>${notesPicker}</div>`;
+  return html.replace('<label>Приоритет<select id="f-priority">', `${extra}<label>Приоритет<select id="f-priority">`);
+};
+window.v4PointEditorHtml = v4PointEditorHtml;
+
+const V65_BASE_SAVE_POINT = savePointEditor;
+savePointEditor = function() {
+  const modal = ui.modal;
+  if (!modal || modal.type !== 'point') return V65_BASE_SAVE_POINT();
+  const sourceDay = Number(modal.dayIndex);
+  const targetDay = Number($('#f-day')?.value);
+  const editId = modal.editId;
+  const old = editId ? store.itinerary[sourceDay]?.events?.find(item => item.id === editId) : null;
+  const oldChecks = v65PointChecklist(old || modal.data || {});
+  const doneByText = new Map(oldChecks.map(item => [item.text, Boolean(item.done)]));
+  const lines = ($('#f-v65-checklist')?.value || '').split(/\r?\n/).map(value => value.trim()).filter(Boolean);
+  const fieldChecklist = lines.map((text,index) => ({ id: oldChecks.find(item => item.text === text)?.id || `point-${Date.now()}-${index}`, text, done:doneByText.get(text) || false }));
+  const relatedNoteIds = [...document.querySelectorAll('[data-v65-note-id]:checked')].map(node => node.dataset.v65NoteId).filter(Boolean);
+  const beforeIds = new Set(store.itinerary[targetDay]?.events?.map(item => item.id) || []);
+  V65_BASE_SAVE_POINT();
+  const list = store.itinerary[targetDay]?.events || [];
+  const saved = editId ? list.find(item => item.id === editId) : list.find(item => !beforeIds.has(item.id));
+  if (saved) {
+    saved.fieldChecklist = fieldChecklist;
+    saved.relatedNoteIds = relatedNoteIds;
+    saved.updatedAt = nowIso();
+    saved.updatedBy = store.sync?.deviceId || 'local';
+    store.routeUpdatedAt = nowIso();
+    save();
+    render();
+  }
+};
+window.savePointEditor = savePointEditor;
+
+/* Event actions: one route action; alarm moves to day-level; no DiDi / Note / AMap duplicate. */
+const V65_BASE_EVENT_CARD = v4EventCard;
+v4EventCard = function(event,index,day,dayIndex,conflicts) {
+  const html = V65_BASE_EVENT_CARD(event,index,day,dayIndex,conflicts);
+  const root = document.createElement('div');
+  root.innerHTML = html;
+  const actions = root.querySelector('.action-row');
+  if (actions) {
+    actions.classList.add('v65-event-actions');
+    actions.innerHTML = `${hasUsefulMapQuery(event) ? `<button onclick="native('navigateMap','${escJs(event.query || event.cn)}')">Маршрут</button>` : ''}${event.cn ? `<button onclick="native('copy','${escJs(event.cn)}')">复制</button>` : ''}<button onclick="showPointEditor(${dayIndex},'${escJs(event.id)}')">Править</button>`;
+  }
+  return root.innerHTML;
+};
+window.v4EventCard = v4EventCard;
+
+function v65OpenDayAlarm(dayIndex) { ui.modal = { type:'v65-day-alarm', dayIndex }; render(); }
+window.v65OpenDayAlarm = v65OpenDayAlarm;
+function v65DayAlarmModal(modal) {
+  const day = store.itinerary[modal.dayIndex];
+  const rows = (day?.events || []).map(event => ({ event, match:String(event.time || '').match(/(\d{1,2}):(\d{2})/) })).filter(row => row.match);
+  return `<div class="modal-backdrop" onclick="closeModal(event)"><section class="modal small-modal" onclick="event.stopPropagation()"><div class="modal-head"><div><div class="eyebrow">${esc(day ? v65DayLabel(day) : '')}</div><h2>Будильник</h2></div><button onclick="ui.modal=null;render()">×</button></div><p class="v65-modal-intro">Выбери событие — откроется системный будильник с его временем и названием.</p><div class="v65-alarm-list">${rows.map(({event,match}) => `<button onclick="native('setAlarm',${Number(match[1])},${Number(match[2])},'${escJs(event.title)}')"><time>${esc(match[1].padStart(2,'0'))}:${esc(match[2])}</time><span>${esc(event.title)}</span><i>›</i></button>`).join('')}</div></section></div>`;
+}
+const V65_BASE_MODAL = modalHtml;
+modalHtml = function() { return ui.modal?.type === 'v65-day-alarm' ? v65DayAlarmModal(ui.modal) : V65_BASE_MODAL(); };
+window.modalHtml = modalHtml;
+
+/* One guide disclosure owner: deterministic open/close animation. */
+toggleGuide = function(id) {
+  const card = document.querySelector(`[data-guide="${CSS.escape(id)}"]`);
+  const body = card?.querySelector('.guide-expanded');
+  const icon = card?.querySelector('.guide-title-button i');
+  const opening = !Boolean(ui.openGuide[id]);
+  ui.openGuide[id] = opening;
+  if (!card || !body) return render();
+  if (icon) icon.textContent = opening ? '−' : '+';
+  if (opening) {
+    body.classList.add('open');
+    v65AnimateBlock(body,true,() => body.classList.add('open'));
+  } else {
+    v65AnimateBlock(body,false,() => body.classList.remove('open'));
+  }
+};
+window.toggleGuide = toggleGuide;
+
+/* Guide card simplified: one “Как посмотреть” disclosure; no Take/Say/Note/Walk duplicates. */
+function v65GuideCard(item) {
+  const open = Boolean(ui.openGuide[item.id]);
+  const sources = typeof v58Sources === 'function' ? v58Sources(item) : [];
+  const kindLabel = item._guideKind === 'custom' ? '<span class="guide-user-badge">Св
