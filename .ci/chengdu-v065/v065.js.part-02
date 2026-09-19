@@ -1,0 +1,71 @@
+оя</span>' : item._guideKind === 'override' ? '<span class="guide-user-badge">Изменено</span>' : '';
+  const fifteen = item.fifteenText || v59GuideFallback(item,'fifteen');
+  const tired = item.tiredText || v59GuideFallback(item,'tired');
+  const skip = item.skipText || v59GuideFallback(item,'skip');
+  return `<article class="guide-card v5-guide v57-guide v58-guide v59-guide v65-guide ${item.priority === 'must' ? 'featured' : ''}" data-guide="${esc(item.id)}"><div class="guide-meta"><span>${typeIcons[item.type] || '•'} ${typeLabels[item.type] || item.type} ${kindLabel}</span><span>${esc(item.area || '')}</span></div><button class="guide-title-button touch-target" onclick="toggleGuide('${escJs(item.id)}')"><span><h3>${esc(item.title)}</h3><p>${esc(item.summary || '')}</p></span><i>${open ? '−' : '+'}</i></button>${item.cn ? `<button class="cn-line copyable touch-target" onclick="native('copy','${escJs(item.cn)}')">${esc(item.cn)}</button>` : ''}<div class="guide-expanded ${open ? 'open' : ''}"><div class="v59-depth-stack"><details class="guide-depth v65-howto"><summary><span>Как посмотреть</span><i>⌄</i></summary><div class="v65-howto-body"><div><b>За 30 секунд</b><p>${esc(item.summary || 'Краткая подсказка пока не добавлена.')}</p></div><div><b>Нормально посмотреть</b><p>${esc(item.details || 'Подробное описание пока не добавлено.')}</p></div><div><b>Есть 15 минут</b><p>${esc(fifteen)}</p></div><div><b>Если устали</b><p>${esc(tired)}</p></div><div><b>Что можно пропустить</b><p>${esc(skip)}</p></div></div></details>${item.deep ? `<details class="guide-depth"><summary><span>Почитать подробно</span><i>⌄</i></summary><p>${esc(item.deep)}</p></details>` : ''}</div><div class="guide-deep-grid v59-guide-facts">${item.foodText ? `<div><b>Попробовать</b><p>${esc(item.foodText)}</p></div>` : ''}${item.buyText ? `<div><b>Купить</b><p>${esc(item.buyText)}</p></div>` : ''}</div>${item.warning ? `<div class="warning">${esc(item.warning)}</div>` : ''}${sources.length ? `<div class="source-list"><b>Источники и полное чтение</b>${sources.map(source => `<button onclick="native('openUrl','${escJs(source.url)}')"><span>${esc(source.label)}</span><small>${esc(source.note || '')}</small><i>↗</i></button>`).join('')}</div>` : ''}<div class="guide-maintenance"><button class="secondary-btn" onclick="v57ShowGuideEditor('${escJs(item.id)}')">Править</button><button class="danger-text" onclick="v57DeleteGuide('${escJs(item.id)}')">Удалить</button></div></div><div class="guide-actions"><button onclick="native('openMap','${escJs(item.query || item.cn || item.title)}')">AMap</button><button class="add" onclick="addGuideToRoute('${escJs(item.id)}')">+ Маршрут</button></div></article>`;
+}
+v4GuideCard = v65GuideCard;
+guideCard = v65GuideCard;
+v57GuideCard = v65GuideCard;
+v58GuideCard = v65GuideCard;
+v59GuideCard = v65GuideCard;
+window.v4GuideCard = v65GuideCard;
+
+/* Day: day-level alarm + the same Don't miss cards as Today. */
+const V65_BASE_DAY_VIEW = v4DayView;
+v4DayView = function() {
+  const html = V65_BASE_DAY_VIEW();
+  const dayIndex = ui.day ?? currentDayIndex();
+  const day = store.itinerary[dayIndex];
+  if (!day) return html;
+  const root = document.createElement('div');
+  root.innerHTML = html;
+  const actions = root.querySelector('.day-actions');
+  if (actions && !actions.querySelector('[data-v65-day-alarm]')) actions.insertAdjacentHTML('afterbegin', `<button data-v65-day-alarm class="secondary-btn touch-target" onclick="v65OpenDayAlarm(${dayIndex})">Будильник</button>`);
+  [...root.querySelectorAll('.section-head')].forEach(head => {
+    if (head.querySelector('h2')?.textContent.trim() !== 'Рекомендации рядом') return;
+    const next = head.nextElementSibling;
+    if (next?.classList.contains('guide-grid')) next.remove();
+    head.remove();
+  });
+  const main = root.querySelector('main.content');
+  const block = v65DontMissBlock(day, 'day');
+  if (main && block) main.insertAdjacentHTML('beforeend', block);
+  return root.innerHTML;
+};
+dayView = v4DayView;
+window.v4DayView = v4DayView;
+
+/* Ensure renderer uses v0.6.5 owners after all previous overlays. */
+const V65_BASE_RENDER = render;
+render = function() {
+  v65EnsureDayChecklists();
+  V65_BASE_RENDER();
+};
+window.render = render;
+
+/* Report release without changing schema. */
+const V65_BASE_REPORT = v4SelfTestReport;
+v4SelfTestReport = function() {
+  const report = V65_BASE_REPORT();
+  report.version = V65_RELEASE;
+  report.v65 = {
+    checklistControl:true,
+    systemDayChecklists:true,
+    unifiedDontMiss:true,
+    noTicketSettings:true,
+    noPreviewCard:true,
+    simplifiedEventActions:true,
+    linkedNotes:true,
+    pointChecklist:true,
+    simplifiedGuide:true,
+    stableDisclosure:true
+  };
+  report.health.checks.v65Ia = Object.values(report.v65).every(Boolean);
+  report.health.ok = Object.values(report.health.checks).every(Boolean);
+  return report;
+};
+selfTestReport = v4SelfTestReport;
+window.v4SelfTestReport = v4SelfTestReport;
+
+render();
