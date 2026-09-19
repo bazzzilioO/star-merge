@@ -1,0 +1,104 @@
+name: Build Chengdu v0.6.6
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    if: github.head_ref == 'chengdu-2026-v066-build'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Restore verified v0.6.5 source
+        run: |
+          git fetch origin 8dff105d71f53b689e83c366c3aa73c5815149ba --depth=1
+          git checkout 8dff105d71f53b689e83c366c3aa73c5815149ba -- .ci/chengdu-v065
+          git show 8dff105d71f53b689e83c366c3aa73c5815149ba:.github/workflows/build-chengdu-v065.yml > /tmp/v065.yml
+          ruby -ryaml -e '
+            doc = YAML.load_file("/tmp/v065.yml")
+            doc.fetch("jobs").fetch("build").fetch("steps").select { |s| s["run"] }.first(2).each do |step|
+              puts "\n# ---- #{step["name"] || "run"} ----"
+              puts step["run"]
+            end
+          ' > /tmp/rebuild-v065-source.sh
+          bash -euxo pipefail /tmp/rebuild-v065-source.sh
+          test -f /tmp/chengdu-v062/project/app/src/main/assets/app.js
+          grep -q "const APP_VERSION = '0.6.5';" /tmp/chengdu-v062/project/app/src/main/assets/app.js
+          grep -q 'versionCode = 19' /tmp/chengdu-v062/project/app/build.gradle.kts
+          grep -q 'versionName = "0.6.5"' /tmp/chengdu-v062/project/app/build.gradle.kts
+          test -f /tmp/chengdu-v062/project/app/src/main/assets/v065.js
+          test -f /tmp/chengdu-v062/project/app/src/main/assets/v065.css
+          echo 'ed906c9974287f2cba844d9222d5e0886a01f041c436df9c82e29f8bc639d4c0  /tmp/chengdu-v062/project/app/src/main/assets/trip-data.js' | sha256sum -c -
+          echo '587aae871e10f4ef110a218195322fed58fdd895e1d7b93f098a518b07bdf112  /tmp/chengdu-v062/project/app/src/main/assets/guide-data.js' | sha256sum -c -
+          echo '415407527c2de9b9ec8f764bff2de850fa7fc66356530d3bf2165c2e59e94cf5  /tmp/chengdu-v062/project/app/src/main/assets/phrase-data.js' | sha256sum -c -
+
+      - name: Apply v0.6.6 UX fixes
+        run: |
+          echo '26cfe42e4962a6ea8dad079dde8deb6557f5eb1eab3f620a4bf3331e54009b95  .ci/chengdu-v066/v066.js' | sha256sum -c -
+          echo '77fb28ab5d6a5a50946079477042ccdcd6a078352b3c29dff8cfe2bf43f8d952  .ci/chengdu-v066/v066.css' | sha256sum -c -
+          cp .ci/chengdu-v066/v066.js /tmp/chengdu-v062/project/app/src/main/assets/v066.js
+          cp .ci/chengdu-v066/v066.css /tmp/chengdu-v062/project/app/src/main/assets/v066.css
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path('/tmp/chengdu-v062/project')
+          app=root/'app/src/main/assets/app.js'
+          idx=root/'app/src/main/assets/index.html'
+          gradle=root/'app/build.gradle.kts'
+          text=app.read_text(); assert text.count("const APP_VERSION = '0.6.5';") == 1
+          app.write_text(text.replace("const APP_VERSION = '0.6.5';", "const APP_VERSION = '0.6.6';"))
+          text=gradle.read_text(); assert text.count('versionCode = 19') == 1; assert text.count('versionName = "0.6.5"') == 1
+          gradle.write_text(text.replace('versionCode = 19','versionCode = 20').replace('versionName = "0.6.5"','versionName = "0.6.6"'))
+          text=idx.read_text(); assert 'v066.css' not in text and 'v066.js' not in text
+          text=text.replace('<link rel="stylesheet" href="v065.css">','<link rel="stylesheet" href="v065.css">\n  <link rel="stylesheet" href="v066.css">')
+          text=text.replace('<script src="v065.js"></script>','<script src="v065.js"></script>\n  <script src="v066.js"></script>')
+          idx.write_text(text)
+          PY
+          node --check /tmp/chengdu-v062/project/app/src/main/assets/app.js
+          node --check /tmp/chengdu-v062/project/app/src/main/assets/v066.js
+          grep -q "const APP_VERSION = '0.6.6';" /tmp/chengdu-v062/project/app/src/main/assets/app.js
+          grep -q 'versionCode = 20' /tmp/chengdu-v062/project/app/build.gradle.kts
+          grep -q 'versionName = "0.6.6"' /tmp/chengdu-v062/project/app/build.gradle.kts
+          echo 'ed906c9974287f2cba844d9222d5e0886a01f041c436df9c82e29f8bc639d4c0  /tmp/chengdu-v062/project/app/src/main/assets/trip-data.js' | sha256sum -c -
+          echo '587aae871e10f4ef110a218195322fed58fdd895e1d7b93f098a518b07bdf112  /tmp/chengdu-v062/project/app/src/main/assets/guide-data.js' | sha256sum -c -
+          echo '415407527c2de9b9ec8f764bff2de850fa7fc66356530d3bf2165c2e59e94cf5  /tmp/chengdu-v062/project/app/src/main/assets/phrase-data.js' | sha256sum -c -
+          if find /tmp/chengdu-v062/project -type f \( -iname '*.jks' -o -iname 'SIGNING.txt' \) | grep -q .; then
+            echo 'Signing material must not be present in CI source' >&2
+            exit 1
+          fi
+
+      - name: Build unsigned v0.6.6
+        run: |
+          SDKMANAGER=$(find "$ANDROID_HOME" -path '*/cmdline-tools/*/bin/sdkmanager' -type f -print -quit)
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" 'platforms;android-35' 'build-tools;35.0.0'
+          gradle -p /tmp/chengdu-v062/project clean :app:assembleRelease --stacktrace
+
+      - name: Collect unsigned APK and exact signing tools
+        run: |
+          rm -rf /tmp/dist-v066
+          mkdir -p /tmp/dist-v066/signing-tools/lib /tmp/dist-v066/signing-tools/lib64 /tmp/dist-v066/project
+          cp /tmp/chengdu-v062/project/app/build/outputs/apk/release/app-release-unsigned.apk /tmp/dist-v066/
+          BT="$ANDROID_HOME/build-tools/35.0.0"
+          cp "$BT/zipalign" /tmp/dist-v066/signing-tools/
+          cp "$BT/apksigner" /tmp/dist-v066/signing-tools/
+          cp "$BT/aapt2" /tmp/dist-v066/signing-tools/
+          cp "$BT/lib/apksigner.jar" /tmp/dist-v066/signing-tools/lib/
+          if [ -f "$BT/lib64/libc++.so" ]; then cp "$BT/lib64/libc++.so" /tmp/dist-v066/signing-tools/lib64/; fi
+          cp -a /tmp/chengdu-v062/project/. /tmp/dist-v066/project/
+          sha256sum /tmp/dist-v066/app-release-unsigned.apk > /tmp/dist-v066/unsigned-sha256.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chengdu-v066-build
+          path: /tmp/dist-v066
