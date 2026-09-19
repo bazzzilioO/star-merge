@@ -1,0 +1,33 @@
+name: Collect Android 35 tools v0.6.5
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  tools:
+    if: github.head_ref == 'chengdu-2026-v065-build'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ensure exact Build Tools 35.0.0
+        run: |
+          SDKMANAGER=$(find "$ANDROID_HOME" -path '*/cmdline-tools/*/bin/sdkmanager' -type f -print -quit)
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" 'build-tools;35.0.0'
+      - name: Collect matching tools
+        run: |
+          BT="$ANDROID_HOME/build-tools/35.0.0"
+          test -x "$BT/zipalign"
+          test -x "$BT/apksigner"
+          test -f "$BT/lib/apksigner.jar"
+          test -f "$BT/lib64/libc++.so"
+          mkdir -p /tmp/android35-tools/lib /tmp/android35-tools/lib64
+          cp "$BT/zipalign" /tmp/android35-tools/
+          cp "$BT/apksigner" /tmp/android35-tools/
+          cp "$BT/aapt2" /tmp/android35-tools/
+          cp "$BT/lib/apksigner.jar" /tmp/android35-tools/lib/
+          cp "$BT/lib64/libc++.so" /tmp/android35-tools/lib64/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android35-tools-v065
+          path: /tmp/android35-tools
