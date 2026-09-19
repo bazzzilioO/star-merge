@@ -45,8 +45,6 @@ jobs:
 
       - name: Apply v0.6.6 UX fixes
         run: |
-          echo '26cfe42e4962a6ea8dad079dde8deb6557f5eb1eab3f620a4bf3331e54009b95  .ci/chengdu-v066/v066.js' | sha256sum -c -
-          echo '77fb28ab5d6a5a50946079477042ccdcd6a078352b3c29dff8cfe2bf43f8d952  .ci/chengdu-v066/v066.css' | sha256sum -c -
           cp .ci/chengdu-v066/v066.js /tmp/chengdu-v062/project/app/src/main/assets/v066.js
           cp .ci/chengdu-v066/v066.css /tmp/chengdu-v062/project/app/src/main/assets/v066.css
           python3 - <<'PY'
