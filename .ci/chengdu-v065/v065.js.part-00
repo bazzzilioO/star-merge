@@ -1,0 +1,197 @@
+'use strict';
+
+/* v0.6.5 — information architecture cleanup.
+   Route text, times, notes, AMap queries and user content remain untouched.
+   This layer removes duplicated controls and makes checklist / note / guide links coherent. */
+const V65_RELEASE = '0.6.5';
+
+ui.v65MissOpen = ui.v65MissOpen || {};
+
+function v65DayLabel(day) {
+  if (!day) return '';
+  const parts = dateParts(day.date);
+  return `${parts.day} октября · ${day.title}`;
+}
+
+function v65SystemChecklistId(date) { return `system-day-${date}`; }
+function v65SystemChecklistFor(date) {
+  return (store.checklists || []).find(group => group.id === v65SystemChecklistId(date)) || null;
+}
+
+function v65EnsureDayChecklists() {
+  store.checklists = Array.isArray(store.checklists) ? store.checklists : [];
+  let changed = false;
+  store.itinerary.forEach(day => {
+    const id = v65SystemChecklistId(day.date);
+    if (store.checklists.some(group => group.id === id)) return;
+    store.checklists.push({
+      id,
+      title: v65DayLabel(day),
+      systemDay: day.date,
+      system: true,
+      items: [],
+      updatedAt: nowIso()
+    });
+    changed = true;
+  });
+  if (changed) save();
+}
+v65EnsureDayChecklists();
+
+function v65DayControlHtml(day) {
+  const group = v65SystemChecklistFor(day?.date);
+  const items = group?.items || [];
+  const undone = items.filter(item => !item.done);
+  const done = items.length - undone.length;
+  const rows = undone.slice(0, 4).map(item => `<label class="v65-control-item"><input type="checkbox" onchange="v4ToggleCheck('${escJs(group.id)}','${escJs(item.id)}',this.checked)"><span></span><b>${esc(item.text)}</b></label>`).join('');
+  return `<div class="v65-control-list">${rows || `<p class="v65-control-empty">На этот день задач пока нет.</p>`}${undone.length > 4 ? `<small>Ещё ${undone.length - 4}</small>` : ''}</div><div class="v65-control-foot"><span>${done}/${items.length} готово</span><button onclick="v65OpenDayChecklist('${escJs(day?.date || '')}')">Открыть подготовку ›</button></div>`;
+}
+
+function v65PrepDashboard(day) {
+  const phase = v60TripPhase();
+  const now = v60Now();
+  const start = new Date(`${V60_TRIP_START}T11:10:00${V60_TRIP_OFFSET}`);
+  const days = Math.max(0, Math.ceil((start.getTime() - now.getTime()) / 86400000));
+  const head = phase === 'before' && !store.runtime?.simulation?.enabled
+    ? `<span>До поездки</span><b>${days} дней</b>`
+    : `<span>${store.runtime?.simulation?.enabled ? 'Предпросмотр даты' : 'Сегодня'}</span><b>${esc(dateParts(day.date).day)} октября</b>`;
+  return `<section class="v60-prep-dashboard v61-prep-dashboard v65-control-dashboard"><header>${head}</header><div class="v61-prep-summary"><span>На контроле · ${esc(dateParts(day.date).day)} октября</span><b>${(v65SystemChecklistFor(day.date)?.items || []).filter(item => !item.done).length} задач</b></div>${v65DayControlHtml(day)}</section>`;
+}
+
+function v65OpenDayChecklist(date) {
+  const id = v65SystemChecklistId(date);
+  store.collapsed = store.collapsed || {};
+  store.collapsed[`check-group-${id}`] = false;
+  save();
+  if (typeof v61PushView === 'function') v61PushView('checklists', {});
+  else rootView('checklists');
+  setTimeout(() => document.getElementById(`v65-${id}`)?.scrollIntoView({ block:'start', behavior:'smooth' }), 120);
+}
+window.v65OpenDayChecklist = v65OpenDayChecklist;
+
+function v65DontMissItems(day) {
+  if (!day) return [];
+  const guides = GUIDE.filter(item => item.day === day.date)
+    .sort((a,b) => Number(b.priority === 'must') - Number(a.priority === 'must'))
+    .slice(0,8)
+    .map(item => ({ key:`guide:${item.id}`, kind:'guide', item }));
+  const guideIds = new Set(guides.map(row => row.item.id));
+  const notes = (store.notesCards || [])
+    .filter(note => note.scopeDay === day.date && (!note.sourceGuideId || !guideIds.has(note.sourceGuideId)))
+    .sort((a,b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0))
+    .map(item => ({ key:`note:${item.id}`, kind:'note', item }));
+  return [...guides, ...notes];
+}
+
+function v65MissSummary(row) {
+  if (row.kind === 'guide') return row.item.summary || row.item.details || '';
+  return row.item.text || row.item.url || '';
+}
+
+function v65DontMissCard(row) {
+  const open = Boolean(ui.v65MissOpen[row.key]);
+  const item = row.item;
+  const type = row.kind === 'guide' ? (typeLabels[item.type] || item.type || 'Гид') : 'Заметка';
+  const title = item.title || 'Без названия';
+  const summary = v65MissSummary(row);
+  let body = '';
+  if (row.kind === 'guide') {
+    const sources = typeof v58Sources === 'function' ? v58Sources(item) : [];
+    body = `<p>${esc(item.details || item.summary || '')}</p>${item.warning ? `<div class="warning">${esc(item.warning)}</div>` : ''}${sources.length ? `<div class="source-list">${sources.map(source => `<button onclick="native('openUrl','${escJs(source.url)}')"><span>${esc(source.label)}</span><i>↗</i></button>`).join('')}</div>` : ''}<button class="v65-miss-open" onclick="openGuideDetail('${escJs(item.id)}')">Открыть в Гиде ›</button>`;
+  } else {
+    body = `<p>${esc(item.text || '')}</p>${item.url ? `<button class="source-link" onclick="native('openUrl','${escJs(item.url)}')">Открыть ссылку ↗</button>` : ''}${item.tags?.length ? `<div class="note-tags">${item.tags.map(tag => `<span>${esc(tag)}</span>`).join('')}</div>` : ''}<button class="v65-miss-open" onclick="v65OpenNote('${escJs(item.id)}')">Открыть заметку ›</button>`;
+  }
+  return `<article class="v65-miss-card ${open ? 'is-open' : ''}" data-v65-miss="${esc(row.key)}"><button class="v65-miss-head" onclick="v65ToggleMiss('${escJs(row.key)}')"><span><small>${esc(type)}</small><b>${esc(title)}</b><em>${esc(String(summary).slice(0, 150))}</em></span><i>${open ? '−' : '+'}</i></button><div class="v65-miss-body">${body}</div></article>`;
+}
+
+function v65DontMissBlock(day, mode = 'day') {
+  const items = v65DontMissItems(day);
+  if (!items.length) return '';
+  return `${section('Не пропустить', `${items.length}`)}<div class="v65-miss-grid is-${esc(mode)}">${items.map(v65DontMissCard).join('')}</div>`;
+}
+
+function v65AnimateBlock(body, opening, done) {
+  if (!body || v62MotionMinimal?.()) return done();
+  body.getAnimations().forEach(animation => animation.cancel());
+  if (opening) {
+    body.style.display = 'block';
+    body.style.height = 'auto';
+  }
+  const start = opening ? 0 : body.getBoundingClientRect().height;
+  const end = opening ? body.scrollHeight : 0;
+  body.style.overflow = 'hidden';
+  const animation = body.animate([
+    { height:`${start}px`, opacity:opening ? 0 : 1, transform:opening ? 'translateY(-4px)' : 'none' },
+    { height:`${end}px`, opacity:opening ? 1 : 0, transform:opening ? 'none' : 'translateY(-4px)' }
+  ], { duration:opening ? 220 : 180, easing:'cubic-bezier(.2,.8,.2,1)' });
+  animation.onfinish = () => { body.style.height=''; body.style.overflow=''; body.style.opacity=''; body.style.transform=''; done(); };
+  animation.oncancel = () => { body.style.height=''; body.style.overflow=''; };
+}
+
+function v65ToggleMiss(key) {
+  const card = document.querySelector(`[data-v65-miss="${CSS.escape(key)}"]`);
+  if (!card) return;
+  const body = card.querySelector('.v65-miss-body');
+  const icon = card.querySelector('.v65-miss-head i');
+  const opening = !card.classList.contains('is-open');
+  ui.v65MissOpen[key] = opening;
+  if (icon) icon.textContent = opening ? '−' : '+';
+  if (opening) {
+    card.classList.add('is-open');
+    v65AnimateBlock(body, true, () => card.classList.add('is-open'));
+  } else {
+    v65AnimateBlock(body, false, () => card.classList.remove('is-open'));
+  }
+}
+window.v65ToggleMiss = v65ToggleMiss;
+
+function v65OpenNote(id) {
+  const note = (store.notesCards || []).find(item => item.id === id);
+  if (!note) return toast('Заметка не найдена');
+  store.collapsed = store.collapsed || {};
+  store.collapsed[`note-${id}`] = false;
+  save();
+  if (typeof v61PushView === 'function') v61PushView('notes', {});
+  else rootView('notes');
+  setTimeout(() => {
+    const buttons = [...document.querySelectorAll('.note-card .note-head')];
+    const button = buttons.find(node => node.textContent.includes(note.title || 'Без названия'));
+    button?.closest('.note-card')?.scrollIntoView({ block:'center', behavior:'smooth' });
+  }, 120);
+}
+window.v65OpenNote = v65OpenNote;
+
+/* Today: one control source (checklists), no preview/Now duplicate, one shared Don't miss source. */
+todayView = function() {
+  const dayIndex = currentDayIndex();
+  const day = store.itinerary[dayIndex] || store.itinerary[0];
+  const parts = dateParts(day.date);
+  const next = day.events.find((event,index) => !eventDone(event, day, index));
+  return shell(`
+    ${healthBanner()}
+    ${v65PrepDashboard(day)}
+    <section class="hero v61-hero"><div class="eyebrow">Сычуань · 25–31 октября 2026</div><h1>成都 <span>trip control</span></h1></section>
+    <section class="now-card">
+      <div class="now-date"><b>${parts.day}</b><span>${esc(day.weekday)}<br>${parts.mon}</span></div>
+      <div class="now-main"><div class="eyebrow">Выбранный день</div><h2>${esc(day.title)}</h2><p>${next ? `Следующее: ${esc(next.time || 'по ситуации')} · ${esc(next.title)}` : 'Все пункты отмечены'}</p></div>
+      <button class="round-arrow touch-target" onclick="${next ? `v62OpenEvent(${dayIndex},'${escJs(next.id)}')` : `openDay(${dayIndex})`}" aria-label="Открыть день">›</button>
+    </section>
+    <div class="v65-home-single"><button class="v58-feature-card shopping" onclick="rootView('shopping')"><i>◇</i><span><b>Что привезти</b><small>ремёсла, чай, специи, винил</small></span></button></div>
+    ${section('Сегодня в маршруте', `${day.events.length} пунктов`)}
+    <div class="compact-events">${day.events.slice(0,6).map((event,index) => compactEvent(event,day,index,dayIndex)).join('')}</div>
+    <button class="text-button touch-target" onclick="openDay(${dayIndex})">Открыть весь день →</button>
+    ${v65DontMissBlock(day, 'home')}
+  `);
+};
+window.todayView = todayView;
+
+/* System day checklist sections + existing user sections. */
+const V65_BASE_CHECKLIST_GROUP = v4ChecklistGroup;
+function v65SystemChecklistGroup(group) {
+  const progress = v4ChecklistProgress(group);
+  const key = `check-group-${group.id}`;
+  const body = `<div class="check-progress"><i style="width:${progress.percent}%"></i></div><div class="editable-checks">${group.items.map((item,itemIndex) => `<div class="editable-check ${item.done ? 'done' : ''}"><label class="check touch-target"><input type="checkbox" ${item.done ? 'checked' : ''} onchange="v4ToggleCheck('${escJs(group.id)}','${escJs(item.id)}',this.checked)"><span></span><b>${esc(item.text)}</b></label><small>${esc(item.owner || 'Оба')}</small><div><button onclick="v4MoveCheck('${escJs(group.id)}',${itemIndex},-1)" ${itemIndex===0?'disabled':''}>↑</button><button onclick="v4MoveCheck('${escJs(group.id)}',${itemIndex},1)" ${itemIndex===group.items.length-1?'disabled':''}>↓</button><button onclick="showChecklistEditor('item','${escJs(group.id)}','${escJs(item.id)}')">✎</button><button class="danger-text" onclick="v4DeleteCheck('${escJs(group.id)}','${escJs(item.id)}')">×</button></div></div>`).join('')}</div><div class="check-group-actions"><button class="secondary-btn touch-target" onclick="showChecklistEditor('item','${escJs(group.id)}')">+ Пункт</button><small>Системный раздел дня</small></div>`;
+  return `<div id="v65-${esc(group.id)}">${v4Spoiler(group.title, key, body, `${progress.done}/${progress.total}`, true, 'check-group-v4 v65-system-checklist')}</div>`;
+}
+
+v4ChecklistsView
