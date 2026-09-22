@@ -55,6 +55,9 @@ jobs:
           echo "88e3ba4ba1a612e8244c127ce8380c84eb0f7c89c64a7a2ed04cb6d247db6261  app/src/main/java/com/vocalos/trainer/MainActivity.java" | sha256sum -c -
           echo "d279c8eb65edbd2057c93b4900ddd6615743a64c17249e70c936c1a24e237f09  app/build.gradle" | sha256sum -c -
           echo "87a081bf085c98776d18554ada0ff38b485e1568efaf91fca18a8f8171b80532  app/vocalos-alpha-dev.jks" | sha256sum -c -
+          echo "2952227324262f5743bf543f7cc02261d232ca0ba9a76b13c198f6529b202025  ../v10fix/compile-fix.patch" | sha256sum -c -
+          patch --batch -p1 < ../v10fix/compile-fix.patch
+          echo "3eb47b8ad30089e6fa475bd6ef02100eef6b9252d287b2fcf38c754b33466409  app/src/main/java/com/vocalos/trainer/MainActivity.java" | sha256sum -c -
           grep -q "versionCode 10" app/build.gradle
           grep -q "0.10-public-alpha-engine-v2" app/build.gradle
           grep -q "targetSdk 36" app/build.gradle
@@ -85,7 +88,7 @@ jobs:
           for marker in ['V10','VC10','visualLeadMs','gamePitchSec10','dailyChallenge10','calibrationVersion=8','FEVER','sourceTs','rawMidi']:
               assert marker in html, marker
           java=(root/'app/src/main/java/com/vocalos/trainer/MainActivity.java').read_text(encoding='utf-8')
-          for marker in ['FRAME_SIZE = 3072','HOP_SIZE = 192','ANALYSIS_INTERVAL_NS = 16_000_000L','MAX_CANDIDATES = 18','AudioSource.UNPROCESSED','VOICE_PERFORMANCE','rawMidi','sourceTs','FRAME_CENTER_DELAY_MS']:
+          for marker in ['FRAME_SIZE = 3072','HOP_SIZE = 192','ANALYSIS_INTERVAL_NS = 16_000_000L','MAX_CANDIDATES = 18','AudioSource.UNPROCESSED','VOICE_PERFORMANCE','rawMidi','sourceTs','FRAME_CENTER_DELAY_MS = 32L']:
               assert marker in java, marker
           print('0.10 QA OK:',len(ids),'unique ids; one runtime; no duplicate functions; Engine v2 markers present')
           PY
