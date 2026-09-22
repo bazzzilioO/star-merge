@@ -1,0 +1,12 @@
+diff -ruN fix-old/app/src/main/java/com/vocalos/trainer/MainActivity.java fix-new/app/src/main/java/com/vocalos/trainer/MainActivity.java
+--- fix-old/app/src/main/java/com/vocalos/trainer/MainActivity.java	2026-09-22 19:43:29.816912208 +0000
++++ fix-new/app/src/main/java/com/vocalos/trainer/MainActivity.java	2026-09-22 19:43:29.827448795 +0000
+@@ -428,7 +428,7 @@
+         private static final long ANALYSIS_INTERVAL_NS = 16_000_000L; // ~62 Hz tracker updates
+         private static final long UI_INTERVAL_MS = 16L; // up to ~60 fps bridge updates
+         private static final long SILENCE_HANG_MS = 160L;
+-        private static final long FRAME_CENTER_DELAY_MS = Math.round(FRAME_SIZE * 500.0 / SAMPLE_RATE);
++        private static final long FRAME_CENTER_DELAY_MS = 32L; // center of 3072-sample window at 48 kHz
+         private static final int MAX_CANDIDATES = 18;
+         private final Object recordLock = new Object();
+         private final Deque<Double> stableHistory = new ArrayDeque<>();
